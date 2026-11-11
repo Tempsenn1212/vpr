@@ -241,11 +241,14 @@ function App() {
   if (!data)
     return (
       <div className="login-wrap">
-        <div className="brand-mark">
-          <FileText size={30} />
+        <div className="login-hero">
+          <div className="brand-mark">
+            <FileText size={30} />
+          </div>
+          <div className="unit-name">Научная рота</div>
+          <h1>Учёт документации ВПР</h1>
+          <p>Общий журнал документов и проверок</p>
         </div>
-        <h1>Учёт документации ВПР</h1>
-        <p className="muted">Общий журнал документов и проверок</p>
         <div className="login-card">
           <ShieldCheck size={32} />
           <h2>{denied ? "Доступ не предоставлен" : "Подключаемся…"}</h2>
@@ -362,18 +365,21 @@ function App() {
       </aside>
       <main>
         <header className="topbar">
-          <span>
-            {view === "home"
-              ? "Рабочее пространство"
-              : view === "category"
-                ? s.categories.find((c) => c.id === category)?.name
-                : view === "reviews"
-                  ? "Контроль и подтверждение"
-                  : view === "history"
-                    ? "Журнал действий"
-                    : "Настройки приложения"}
-          </span>
-          <div>
+          <div className="topbar-brand">
+            <span className="unit-name">Научная рота</span>
+            <span className="topbar-context">
+              {view === "home"
+                ? "Рабочее пространство"
+                : view === "category"
+                  ? s.categories.find((c) => c.id === category)?.name
+                  : view === "reviews"
+                    ? "Контроль и подтверждение"
+                    : view === "history"
+                      ? "Журнал действий"
+                      : "Настройки приложения"}
+            </span>
+          </div>
+          <div className="topbar-meta">
             <CalendarDays size={16} />
             {fmt(s.today)}
             {login && (

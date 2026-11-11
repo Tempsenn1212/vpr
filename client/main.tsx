@@ -494,7 +494,7 @@ function App() {
                   const list = docs.filter((d) => d.categoryId === c.id);
                   return (
                     <button
-                      className="category-card"
+                      className={"category-card category-theme-" + (i % 3)}
                       key={c.id}
                       onClick={() => navigate("category", c.id)}
                     >
@@ -738,9 +738,9 @@ function App() {
     </div>
   );
 }
-function Stat({ icon, label, value, foot, kind = "blue" }: any) {
+function Stat({ icon, label, value, foot, kind = "primary" }: any) {
   return (
-    <div className="stat">
+    <div className={"stat stat-" + kind}>
       <span className={"stat-icon " + kind}>{icon}</span>
       <span className="stat-label">{label}</span>
       <strong>{value}</strong>

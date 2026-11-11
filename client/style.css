@@ -19,6 +19,12 @@
   --gold: #f4c474;
   --on-gold: #173c31;
   --pale: #e8f1eb;
+  --heading-bg: #e0ecdc;
+  --heading-line: #c1d4b8;
+  --heading-muted: #4d6754;
+  --gold-panel: #f6d58f;
+  --green-panel: #d5e8d5;
+  --panel-waves: url("./assets/signal-waves-green.svg");
   --red: #c3464b;
   --amber: #896014;
   --green: #247550;
@@ -30,6 +36,9 @@
 }
 body {
   margin: 0;
+  background:
+    radial-gradient(ellipse at 100% 0, #c9dcb933, transparent 55%),
+    var(--bg);
 }
 ::selection {
   background: #f4c47466;
@@ -346,9 +355,22 @@ main {
   justify-content: space-between;
   gap: 24px;
   margin-bottom: 30px;
+  padding: 26px;
+  border: 1px solid var(--heading-line);
+  border-left: 4px solid #b89047;
+  border-radius: 14px;
+  background:
+    var(--panel-waves) right center / 630px 210px no-repeat,
+    linear-gradient(115deg, var(--heading-bg), var(--pale));
+}
+.page-heading > div {
+  min-width: 0;
+}
+.page-heading h1 {
+  overflow-wrap: anywhere;
 }
 .page-heading p {
-  color: var(--muted);
+  color: var(--heading-muted);
   margin-bottom: 0;
   font-size: 13px;
 }
@@ -400,13 +422,35 @@ main {
   margin-bottom: 24px;
 }
 .stat {
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background:
+    url("./assets/signal-waves.svg") right bottom / 500px 180px no-repeat,
+    linear-gradient(125deg, var(--forest), #17624e);
+  color: #fff;
+  border: 1px solid #1e6552;
   border-radius: 13px;
   padding: 22px;
   display: grid;
   grid-template-columns: 1fr auto;
   box-shadow: var(--shadow);
+}
+.stat-red {
+  background:
+    url("./assets/signal-waves-green.svg") center / 520px 180px no-repeat,
+    linear-gradient(125deg, var(--gold-panel), #edc370);
+  color: var(--on-gold);
+  border-color: #dcb362;
+}
+.stat-amber {
+  background:
+    var(--panel-waves) right bottom / 500px 180px no-repeat,
+    var(--green-panel);
+  color: var(--text);
+  border-color: var(--heading-line);
+}
+.stat-primary .stat-icon {
+  background: #f4c47426;
+  color: var(--gold);
+  border: 1px solid #f4c47433;
 }
 .stat-icon {
   grid-column: 2;
@@ -433,7 +477,7 @@ main {
 }
 .stat-label {
   font-size: 11px;
-  color: var(--muted);
+  color: #d0e4d7;
   padding-right: 8px;
   line-height: 1.6;
 }
@@ -444,13 +488,24 @@ main {
 }
 .stat small {
   font-size: 10px;
-  color: var(--muted);
+  color: #d0e4d7;
+}
+.stat-red .stat-label,
+.stat-red small {
+  color: #405636;
+}
+.stat-amber .stat-label,
+.stat-amber small {
+  color: var(--text);
 }
 .review-banner {
   padding: 23px 25px;
-  border: 1px solid #d8dfcb;
-  border-left: 3px solid #bc934e;
-  background: linear-gradient(110deg, #e9f1e8, #f5f7ed);
+  border: 1px solid #276753;
+  border-left: 3px solid #e6bb6c;
+  background:
+    url("./assets/signal-waves.svg") right center / 750px 250px no-repeat,
+    linear-gradient(110deg, #075343, #003f38);
+  color: #fff;
   display: flex;
   align-items: center;
   gap: 19px;
@@ -458,7 +513,7 @@ main {
   margin-bottom: 36px;
 }
 .review-banner .eyebrow {
-  color: #687949;
+  color: var(--gold);
   font-size: 8px;
   letter-spacing: 1.4px;
 }
@@ -467,15 +522,15 @@ main {
   margin-top: 5px;
 }
 .review-banner p {
-  color: #65786a;
+  color: #d0e4d7;
   font-size: 11px;
   margin-bottom: 0;
 }
 .review-banner > .button {
   margin-left: auto;
-  background: transparent;
-  border-color: #c9d9c7;
-  color: #315d49;
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--on-gold);
   font-size: 11px;
   flex-shrink: 0;
 }
@@ -485,10 +540,10 @@ main {
   justify-content: center;
   width: 49px;
   height: 53px;
-  background: #ffffff8f;
-  border: 1px solid #d7e1ca;
+  background: #f4c47420;
+  border: 1px solid #f4c47455;
   border-radius: 12px;
-  color: #526d36;
+  color: var(--gold);
   flex-shrink: 0;
 }
 .section-title {
@@ -501,6 +556,17 @@ main {
 .section-title h2 {
   font-size: 17px;
   margin-bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.section-title h2::before {
+  content: "";
+  width: 4px;
+  height: 18px;
+  border-radius: 2px;
+  background: #bc934e;
+  flex-shrink: 0;
 }
 .section-title > span {
   color: var(--muted);
@@ -514,8 +580,11 @@ main {
 .category-card {
   text-align: left;
   padding: 23px;
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background:
+    url("./assets/signal-waves.svg") right top / 580px 235px no-repeat,
+    linear-gradient(135deg, #075343, #003f38);
+  border: 1px solid #21634e;
+  color: #fff;
   border-radius: 13px;
   min-width: 0;
   transition:
@@ -524,32 +593,46 @@ main {
 }
 .category-card:hover {
   transform: translateY(-3px);
-  border-color: #b28a43;
+  border-color: var(--gold);
+  box-shadow: 0 8px 24px #003f3820;
+}
+.category-theme-1 {
+  background:
+    url("./assets/signal-waves-green.svg") right top / 580px 235px no-repeat,
+    linear-gradient(135deg, var(--gold-panel), #edc370);
+  border-color: #dcb362;
+  color: var(--on-gold);
+}
+.category-theme-2 {
+  background:
+    url("./assets/signal-waves.svg") right top / 580px 235px no-repeat,
+    linear-gradient(135deg, #227057, #15523f);
+  border-color: #3c8064;
 }
 .category-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 22px;
-  color: #8a9e91;
+  color: var(--gold);
 }
 .folder-icon {
   width: 51px;
   height: 51px;
   border-radius: 13px;
-  background: #e7f0e8;
+  background: #ffffff18;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #376f55;
+  color: var(--gold);
 }
 .tone-1 {
-  background: #fbf0d9;
-  color: #8e6b2d;
+  background: #ffffff5e;
+  color: #735319;
 }
 .tone-2 {
-  background: #eaf1ed;
-  color: #527967;
+  background: #ffffff18;
+  color: #fff;
 }
 .category-card h3 {
   font-size: 16px;
@@ -557,16 +640,36 @@ main {
 }
 .category-card > p {
   font-size: 11px;
-  color: var(--muted);
+  color: #e0ece3;
   margin-bottom: 21px;
 }
 .category-counts {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid #ffffff30;
   padding-top: 16px;
   display: grid;
   gap: 10px;
   font-size: 10px;
-  color: var(--muted);
+  color: #e0ece3;
+}
+.category-card .dot.red {
+  color: #ff9b9e;
+}
+.category-card .dot.amber {
+  color: var(--gold);
+}
+.category-theme-1 > p,
+.category-theme-1 .category-counts {
+  color: #405636;
+}
+.category-theme-1 .category-counts {
+  border-color: #6f542b33;
+}
+.category-theme-1 .category-top,
+.category-theme-1 .dot.amber {
+  color: #735319;
+}
+.category-theme-1 .dot.red {
+  color: #a13f47;
 }
 .category-counts span {
   display: flex;
@@ -575,7 +678,8 @@ main {
 }
 .document-list {
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--heading-line);
+  border-top: 3px solid #bc934e;
   border-radius: 12px;
   overflow: hidden;
 }
@@ -597,14 +701,17 @@ main {
   padding: 19px 0;
   min-width: 0;
 }
+.doc-link:hover .doc-main b {
+  color: var(--primary);
+}
 .doc-icon {
   height: 40px;
   width: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg);
-  color: #7a9386;
+  background: var(--pale);
+  color: var(--primary);
   border-radius: 9px;
   flex-shrink: 0;
 }
@@ -741,8 +848,11 @@ main {
   margin-bottom: 0;
 }
 .panel {
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background:
+    var(--panel-waves) right top / 460px 160px no-repeat,
+    var(--surface);
+  border: 1px solid var(--heading-line);
+  border-top: 3px solid #bc934e;
   border-radius: 13px;
   padding: 25px;
   margin-bottom: 23px;
@@ -989,18 +1099,26 @@ pre {
 }
 .status-summary > div {
   border: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--green-panel);
   padding: 16px;
   border-radius: 10px;
   display: grid;
   gap: 8px;
+}
+.status-summary > div:nth-child(even) {
+  background: var(--gold-panel);
+  color: var(--on-gold);
+  border-color: #dcb362;
+}
+.status-summary > div:nth-child(even) span {
+  color: #405636;
 }
 .status-summary b {
   font-size: 23px;
 }
 .status-summary span {
   font-size: 9px;
-  color: var(--muted);
+  color: var(--text);
   line-height: 1.6;
 }
 .batch-toolbar {
@@ -1240,35 +1358,18 @@ pre {
   --line: #2e493b;
   --pale: #233f30;
   --primary: #a5d5b9;
+  --heading-bg: #1c402e;
+  --heading-line: #436247;
+  --heading-muted: #c2d4c3;
+  --gold-panel: #e8c17a;
+  --green-panel: #2a513c;
+  --panel-waves: url("./assets/signal-waves.svg");
   --red: #f28f94;
   --amber: #e7b66e;
   --green: #7ac4a6;
   color: var(--text);
   background: var(--bg);
   color-scheme: dark;
-}
-[data-theme="dark"] .review-banner {
-  background: #20372a;
-  border-color: #4c5939;
-  border-left-color: #bc934e;
-}
-[data-theme="dark"] .review-banner .eyebrow {
-  color: #dfc98f;
-}
-[data-theme="dark"] .review-banner h3 {
-  color: #eef3ed;
-}
-[data-theme="dark"] .review-banner p {
-  color: #abc1b3;
-}
-[data-theme="dark"] .calendar-icon {
-  background: #30452e;
-  border-color: #526042;
-  color: var(--gold);
-}
-[data-theme="dark"] .review-banner > .button {
-  color: #dfc98f;
-  border-color: #63724d;
 }
 [data-theme="dark"] .warning {
   background: #3d3324;
@@ -1296,11 +1397,6 @@ pre {
   background: #4e3036;
   color: #f0a0a5;
 }
-[data-theme="dark"] .stat-icon,
-[data-theme="dark"] .folder-icon {
-  background: #274634;
-  color: #a8d1b5;
-}
 [data-theme="dark"] .stat-icon.red {
   background: #492e35;
   color: #ec949d;
@@ -1309,19 +1405,14 @@ pre {
   background: #453b2a;
   color: #e5bd7a;
 }
-[data-theme="dark"] .tone-1 {
-  background: #453b2a;
-  color: #e5bd7a;
-}
-[data-theme="dark"] .tone-2 {
-  background: #2b423b;
-  color: #97c8b4;
-}
 [data-theme="dark"] .button {
   color: #173c31;
 }
 [data-theme="dark"] .button.secondary {
   color: var(--text);
+}
+[data-theme="dark"] .review-banner > .button.secondary {
+  color: var(--on-gold);
 }
 [data-theme="dark"] .button.danger {
   color: var(--red);
@@ -1493,13 +1584,14 @@ pre {
   .page-heading {
     display: block;
     margin-bottom: 23px;
+    padding: 21px 17px;
   }
   .page-heading > .button {
     margin-top: 20px;
     font-size: 12px;
   }
   .page-heading h1 {
-    font-size: 27px;
+    font-size: 25px;
   }
   .page-heading p {
     font-size: 11px;

@@ -1,0 +1,6 @@
+# Заменить домен. Caddy автоматически получает HTTPS-сертификат.
+# Caddy запускается на хосте; приложение слушает loopback:3000.
+vpr.example.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:3000
+}

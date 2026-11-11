@@ -1,0 +1,30 @@
+services:
+  demo:
+    profiles: [demo]
+    build: .
+    ports: ["127.0.0.1:3000:3000"]
+    environment:
+      NODE_ENV: development
+      DEV_AUTH: "true"
+      APP_ORIGIN: http://localhost:3000
+      DATABASE_PATH: /app/data/demo.sqlite
+      APP_TIMEZONE: Europe/Moscow
+    volumes: [demo-data:/app/data]
+    restart: unless-stopped
+  app:
+    profiles: [production]
+    build: .
+    ports: ["127.0.0.1:3000:3000"]
+    environment:
+      NODE_ENV: production
+      DEV_AUTH: "false"
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      INITIAL_ADMIN_TELEGRAM_ID: ${INITIAL_ADMIN_TELEGRAM_ID:-}
+      APP_ORIGIN: ${APP_ORIGIN:-https://vpr.example.com}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Moscow}
+      DATABASE_PATH: /app/data/vpr.sqlite
+    volumes: [production-data:/app/data, "./backups:/app/backups"]
+    restart: unless-stopped
+volumes:
+  demo-data:
+  production-data:

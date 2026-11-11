@@ -62,11 +62,9 @@ export function createApp(options = {}) {
       rate.set(req.ip, r);
     }
     if (++r.n > 30)
-      return res
-        .status(429)
-        .json({
-          error: "Слишком много попыток входа. Повторите через минуту.",
-        });
+      return res.status(429).json({
+        error: "Слишком много попыток входа. Повторите через минуту.",
+      });
     next();
   };
   const login = (req, res, user) => {
@@ -83,7 +81,10 @@ export function createApp(options = {}) {
       maxAge: 8 * 3600000,
       path: "/",
     });
-    res.json({ me: user });
+    // Telegram Web embeds the app on another site. Its browser may reject
+    // third-party cookies, so the client also gets the same opaque session
+    // token for authenticated requests. It is never a bot token or initData.
+    res.json({ me: user, sessionToken: token });
   };
   app.get("/api/config", (req, res) =>
     res.json({ demo: config.demo, appName: "Учёт документации ВПР" }),
@@ -185,15 +186,11 @@ export function createApp(options = {}) {
         : e.type === "entity.parse.failed"
           ? 400
           : 500;
-    res
-      .status(status)
-      .json({
-        error:
-          status === 500
-            ? "Ошибка сервера. Изменения не сохранены."
-            : e.message,
-        details: e.details,
-      });
+    res.status(status).json({
+      error:
+        status === 500 ? "Ошибка сервера. Изменения не сохранены." : e.message,
+      details: e.details,
+    });
     if (status === 500)
       console.error("Server failure:", e.name, e.code || "internal");
   });

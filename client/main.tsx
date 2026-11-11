@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import type { State, Doc, Category, Period, Audit, User } from "./types";
 import { statuses, events, fmt, stamp } from "./types";
-import { api, ApiError } from "./api";
+import { api, ApiError, setSessionToken } from "./api";
 import "./style.css";
 declare global {
   interface Window {
@@ -60,7 +60,9 @@ function App() {
     [theme, setTheme] = useState(tg?.colorScheme || "light");
   const mounted = useRef(true),
     loading = useRef(false),
-    epoch = useRef(0);
+    epoch = useRef(0),
+    authenticated = useRef(false),
+    authenticating = useRef(false);
   const [loginBusy, setLoginBusy] = useState(false);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -72,13 +74,15 @@ function App() {
     tg?.onEvent("themeChanged", change);
     return () => tg?.offEvent("themeChanged", change);
   }, []);
-  const refresh = async () => {
-    if (loading.current) return;
+  const refresh = async (initial = false) => {
+    if (!initial && !authenticated.current) return;
+    if (loading.current && !initial) return;
     loading.current = true;
     const e = epoch.current;
     try {
       const s = await api("/state");
       if (mounted.current && e === epoch.current) {
+        authenticated.current = true;
         setData(s);
         setOnline(true);
         setDenied("");
@@ -87,22 +91,52 @@ function App() {
       if (e !== epoch.current) return;
       const ex = err as ApiError;
       if (ex.status === 401 || ex.status === 403) {
+        authenticated.current = false;
+        setSessionToken(null);
         setData(null);
         setDenied(ex.message);
-      } else setOnline(false);
+      } else {
+        setOnline(false);
+        if (initial) setDenied(ex.message);
+      }
     } finally {
-      loading.current = false;
+      if (e === epoch.current) loading.current = false;
     }
   };
   const init = async () => {
+    if (authenticating.current) return;
+    authenticating.current = true;
+    authenticated.current = false;
+    setLoginBusy(true);
+    epoch.current++;
+    setSessionToken(null);
     try {
       const config = await api("/config");
-      if (config.demo) setLogin(await api("/auth/demo-users"));
-      if (tg?.initData)
-        await api("/auth/telegram", { initData: tg.initData }, "POST", false);
-      await refresh();
+      setLogin(config.demo ? await api("/auth/demo-users") : null);
+      if (!config.demo && !tg?.initData) {
+        throw new ApiError(
+          401,
+          tg
+            ? "Telegram не передал данные входа. Закройте окно и откройте приложение кнопкой бота."
+            : "Не удалось загрузить Telegram SDK. Проверьте доступ к telegram.org и откройте приложение заново.",
+        );
+      }
+      if (tg?.initData) {
+        const result = await api(
+          "/auth/telegram",
+          { initData: tg.initData },
+          "POST",
+          false,
+        );
+        setSessionToken(result.sessionToken || null);
+        authenticated.current = true;
+      }
+      await refresh(true);
     } catch (e) {
       setDenied((e as Error).message);
+    } finally {
+      authenticating.current = false;
+      setLoginBusy(false);
     }
   };
   useEffect(() => {
@@ -159,16 +193,35 @@ function App() {
     }
   }
   async function signIn(id: string) {
+    if (authenticating.current) return;
+    authenticating.current = true;
+    authenticated.current = false;
+    epoch.current++;
+    setSessionToken(null);
     setLoginBusy(true);
     try {
-      await api("/auth/demo", { userId: id }, "POST", false);
-      epoch.current++;
-      await refresh();
-      setDenied("");
+      const result = await api("/auth/demo", { userId: id }, "POST", false);
+      setSessionToken(result.sessionToken || null);
+      authenticated.current = true;
+      await refresh(true);
     } catch (e) {
       setDenied((e as Error).message);
     } finally {
+      authenticating.current = false;
       setLoginBusy(false);
+    }
+  }
+  async function signOut(message: string) {
+    authenticated.current = false;
+    epoch.current++;
+    try {
+      await api("/auth/logout", {}, "POST", false);
+      setSessionToken(null);
+      setData(null);
+      setDenied(message);
+    } catch (e) {
+      authenticated.current = true;
+      setError((e as Error).message);
     }
   }
   function navigate(v: string, c = "") {
@@ -299,12 +352,7 @@ function App() {
             {login && (
               <button
                 aria-label="Выйти"
-                onClick={async () => {
-                  epoch.current++;
-                  await api("/auth/logout", {}, "POST", false);
-                  setData(null);
-                  setDenied("Вы вышли из аккаунта");
-                }}
+                onClick={() => void signOut("Вы вышли из аккаунта")}
               >
                 <LogOut size={18} />
               </button>
@@ -333,12 +381,7 @@ function App() {
                 <span className="demo-pill">Демо</span>
                 <button
                   aria-label="Сменить аккаунт"
-                  onClick={async () => {
-                    epoch.current++;
-                    await api("/auth/logout", {}, "POST", false);
-                    setData(null);
-                    setDenied("Выберите тестовый аккаунт");
-                  }}
+                  onClick={() => void signOut("Выберите тестовый аккаунт")}
                 >
                   <LogOut size={15} />
                 </button>

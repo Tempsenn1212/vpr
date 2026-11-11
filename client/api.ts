@@ -8,6 +8,12 @@ export class ApiError extends Error {
   }
 }
 const pending = new Map<string, string>();
+// Kept in this page's memory only. Reloading a Mini App authenticates through
+// Telegram again; credentials are never written to local/session storage.
+let sessionToken: string | null = null;
+export function setSessionToken(value: string | null) {
+  sessionToken = value;
+}
 export async function api(
   path: string,
   body?: any,
@@ -26,6 +32,7 @@ export async function api(
       method: body === undefined ? "GET" : method,
       headers: {
         "Content-Type": "application/json",
+        ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
         ...(key ? { "Idempotency-Key": key } : {}),
       },
       body: body === undefined ? undefined : JSON.stringify(body),

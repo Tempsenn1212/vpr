@@ -66,15 +66,24 @@ export function newSession(db, userId, now = Date.now()) {
   return token;
 }
 export function sessionUser(req, store) {
-  const cookie = req.headers.cookie
-    ?.split(";")
-    .map((s) => s.trim())
-    .find((s) => s.startsWith("vpr_session="))
-    ?.slice(12);
-  if (!cookie) return null;
+  const authorization = req.headers.authorization;
+  let token;
+  if (authorization !== undefined) {
+    // An invalid explicit credential must not fall back to a different cookie.
+    const match = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(authorization);
+    if (!match) return null;
+    token = match[1];
+  } else {
+    token = req.headers.cookie
+      ?.split(";")
+      .map((s) => s.trim())
+      .find((s) => s.startsWith("vpr_session="))
+      ?.slice(12);
+  }
+  if (!token) return null;
   const session = store.db
     .prepare("SELECT * FROM sessions WHERE token_hash=? AND expires>?")
-    .get(digest(cookie), Date.now());
+    .get(digest(token), Date.now());
   if (!session) return null;
   const user = store.user(session.user_id);
   return user?.active ? user : null;

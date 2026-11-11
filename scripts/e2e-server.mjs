@@ -7,6 +7,7 @@ const { app, db } = createApp({
   database: join(dir, "e2e.sqlite"),
   production: false,
   demo: true,
+  botToken: "synthetic-e2e-bot-token",
   origin: "http://localhost:4173",
 });
 const server = app.listen(4173, "0.0.0.0");

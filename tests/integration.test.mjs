@@ -72,7 +72,7 @@ async function fixture(t, extra = {}) {
     assert.equal(r.status, 200, JSON.stringify(r.data));
     return r.data;
   };
-  return { ...instance, client, worker, other, chief, create, action };
+  return { ...instance, base, client, worker, other, chief, create, action };
 }
 test("1: unknown caller and forged role cannot read or mutate", async (t) => {
   const f = await fixture(t);
@@ -750,7 +750,15 @@ test("production fails closed: no demo auth, explicit bootstrap ID required, Tel
       body: JSON.stringify({ initData: signed("test", id) }),
     });
   assert.equal((await login(999)).status, 403);
-  assert.equal((await login(123)).status, 200);
+  const allowed = await login(123);
+  assert.equal(allowed.status, 200);
+  assert.match(allowed.headers.get("set-cookie"), /Secure/);
+  const { sessionToken } = await allowed.json();
+  const state = await fetch(base + "/state", {
+    headers: { Authorization: `Bearer ${sessionToken}` },
+  });
+  assert.equal(state.status, 200);
+  assert.equal((await state.json()).me.telegram_id, "123");
   assert.equal((await fetch(base + "/state")).status, 401);
 });
 
@@ -802,5 +810,112 @@ test("12: malformed batch items and hidden scope are rejected, retry does not du
       .state(f.store.user("chief-1"))
       .audit.filter((e) => e.type === "CONFIRM").length,
     1,
+  );
+});
+
+test("Telegram Web bearer sessions work without cookies and immediately enforce roles and access", async (t) => {
+  const f = await fixture(t);
+  const response = await fetch(f.base + "/auth/demo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId: "worker-2" }),
+  });
+  const { sessionToken } = await response.json();
+  assert.match(sessionToken, /^[A-Za-z0-9_-]{43}$/);
+  const hashes = f.db.prepare("SELECT token_hash FROM sessions").all();
+  assert(
+    hashes.every(
+      (r) => r.token_hash !== sessionToken && r.token_hash.length === 64,
+    ),
+  );
+  const call = async (path, body) =>
+    fetch(f.base + path, {
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        Authorization: `Bearer ${sessionToken}`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": randomUUID(),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  assert.equal((await call("/state")).status, 200);
+  let d = await f.create();
+  d = await f.action(f.worker, d, "place", { date: "2026-11-27" });
+  assert.equal(
+    (
+      await call(`/documents/${d.id}/actions/confirm`, {
+        version: d.version,
+        role: "CHIEF",
+      })
+    ).status,
+    403,
+  );
+  f.store.saveUser(f.store.user("worker-1"), "worker-2", {
+    name: "Иван Петров",
+    telegramId: "900000002",
+    role: "CHIEF",
+    active: true,
+  });
+  assert.equal(
+    (await call(`/documents/${d.id}/actions/confirm`, { version: d.version }))
+      .status,
+    200,
+  );
+  f.store.saveUser(f.store.user("worker-1"), "worker-2", {
+    name: "Иван Петров",
+    telegramId: "900000002",
+    role: "CHIEF",
+    active: false,
+  });
+  assert.equal((await call("/state")).status, 401);
+});
+
+test("bearer sessions reject invalid credentials, expire and are revoked on logout", async (t) => {
+  const f = await fixture(t);
+  async function login() {
+    const r = await fetch(f.base + "/auth/demo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: "worker-2" }),
+    });
+    return (await r.json()).sessionToken;
+  }
+  for (const authorization of [
+    "Bearer invalid",
+    "Basic abc",
+    "Bearer " + "a".repeat(43),
+  ]) {
+    const r = await fetch(f.base + "/state", {
+      headers: { Authorization: authorization, Cookie: f.worker.cookie },
+    });
+    assert.equal(r.status, 401);
+  }
+  let token = await login();
+  f.db.prepare("UPDATE sessions SET expires=0 WHERE user_id=?").run("worker-2");
+  assert.equal(
+    (
+      await fetch(f.base + "/state", {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).status,
+    401,
+  );
+  token = await login();
+  const logout = await fetch(f.base + "/auth/logout", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: "{}",
+  });
+  assert.equal(logout.status, 200);
+  assert.equal(
+    (
+      await fetch(f.base + "/state", {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).status,
+    401,
   );
 });

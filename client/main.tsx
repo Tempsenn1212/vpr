@@ -38,6 +38,19 @@ declare global {
   }
 }
 const tg = window.Telegram?.WebApp;
+const unitLogo = new URL("./assets/scientific-company.png", import.meta.url).href;
+function UnitLogo() {
+  return (
+    <img
+      className="unit-logo"
+      src={unitLogo}
+      alt="Эмблема научной роты"
+      width={56}
+      height={56}
+      decoding="async"
+    />
+  );
+}
 function Badge({ status }: { status: string }) {
   return (
     <span className={"badge " + status.toLowerCase()}>
@@ -242,10 +255,10 @@ function App() {
     return (
       <div className="login-wrap">
         <div className="login-hero">
-          <div className="brand-mark">
-            <FileText size={30} />
+          <div className="login-unit">
+            <UnitLogo />
+            <div className="unit-name">Научная рота</div>
           </div>
-          <div className="unit-name">Научная рота</div>
           <h1>Учёт документации ВПР</h1>
           <p>Общий журнал документов и проверок</p>
         </div>
@@ -366,22 +379,25 @@ function App() {
       <main>
         <header className="topbar">
           <div className="topbar-brand">
-            <span className="unit-name">Научная рота</span>
-            <span className="topbar-context">
-              {view === "home"
-                ? "Рабочее пространство"
-                : view === "category"
-                  ? s.categories.find((c) => c.id === category)?.name
-                  : view === "reviews"
-                    ? "Контроль и подтверждение"
-                    : view === "history"
-                      ? "Журнал действий"
-                      : "Настройки приложения"}
-            </span>
+            <UnitLogo />
+            <div className="topbar-titles">
+              <span className="unit-name">Научная рота</span>
+              <span className="topbar-context">
+                {view === "home"
+                  ? "Рабочее пространство"
+                  : view === "category"
+                    ? s.categories.find((c) => c.id === category)?.name
+                    : view === "reviews"
+                      ? "Контроль и подтверждение"
+                      : view === "history"
+                        ? "Журнал действий"
+                        : "Настройки приложения"}
+              </span>
+            </div>
           </div>
           <div className="topbar-meta">
             <CalendarDays size={16} />
-            {fmt(s.today)}
+            <time dateTime={s.today}>{fmt(s.today)}</time>
             {login && (
               <>
                 <span className="demo-pill">Демо</span>

@@ -312,6 +312,19 @@ main {
   color: #d1e2da;
 }
 .topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.unit-logo {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.topbar-titles {
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -1284,8 +1297,19 @@ pre {
     url("./assets/signal-waves.svg") center bottom / 650px 220px no-repeat,
     linear-gradient(145deg, var(--forest), var(--forest-deep));
 }
-.login-hero .unit-name {
-  margin-top: 22px;
+.login-unit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.login-unit .unit-logo {
+  width: 72px;
+  height: 72px;
+}
+.login-unit .unit-name {
+  margin: 0;
   font-size: 13px;
 }
 .login-hero h1 {
@@ -1553,6 +1577,13 @@ pre {
     gap: 12px;
   }
   .topbar-brand {
+    gap: 8px;
+  }
+  .topbar .unit-logo {
+    width: 36px;
+    height: 42px;
+  }
+  .topbar-titles {
     gap: 4px;
   }
   .topbar .unit-name {
@@ -1564,8 +1595,15 @@ pre {
     font-size: 9px;
   }
   .topbar-meta {
-    gap: 5px;
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 2px 5px;
     font-size: 9px;
+  }
+  .topbar-meta > time {
+    grid-column: 1 / -1;
+    white-space: nowrap;
+    text-align: right;
   }
   .topbar-meta > svg {
     display: none;

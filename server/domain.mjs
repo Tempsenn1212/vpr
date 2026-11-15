@@ -87,6 +87,26 @@ export function summary(docs) {
     ),
   };
 }
+export function readyDeadline(d, day, zone = "Europe/Moscow") {
+  if (!d.readyDueDate) return null;
+  const actual =
+    d.status === "NEEDS_CORRECTION"
+      ? null
+      : d.ready
+        ? d.ready.date || today(new Date(d.ready.at), zone)
+        : d.placement?.date;
+  const result = deadline(
+    { dueDate: d.readyDueDate, placement: actual ? { date: actual } : null },
+    day,
+  );
+  return {
+    ...result,
+    label: result.label
+      .replace("Вложен", "Оформлен")
+      .replace("Просрочено", "Оформление просрочено")
+      .replace("Срок сегодня", "Оформить сегодня"),
+  };
+}
 // Journal placement completes the work; a chief's confirmation is optional.
 export function isCompleted(d) {
   return d.status === "PLACED" || d.status === "CONFIRMED";
@@ -172,7 +192,14 @@ export function transition(source, action, body, actor, at, day) {
     case "ready":
       from(["IN_PROGRESS", "NEEDS_CORRECTION"]);
       d.status = "READY";
-      d.ready = mark;
+      d.ready = {
+        ...mark,
+        date: body.date === undefined ? day : date(body.date),
+      };
+      demand(
+        d.ready.date <= day,
+        "Фактическая дата оформления не может быть в будущем",
+      );
       d.placement = null;
       d.confirmation = null;
       d.rejection = null;

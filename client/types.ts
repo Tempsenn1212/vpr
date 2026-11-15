@@ -18,6 +18,16 @@ export type Doc = {
   title: string;
   categoryId: string;
   dueDate: string;
+  readyDueDate?: string | null;
+  topic?: string;
+  recurring?: {
+    ruleId: string;
+    periodKey: string;
+    start: string;
+    end: string;
+    topicLocked: boolean;
+  } | null;
+  items?: { id: string; label: string; ready: Mark | null }[];
   status: string;
   version: number;
   createdBy: { userId: string; name: string };
@@ -30,6 +40,7 @@ export type Doc = {
   deleted: boolean;
   completed: boolean;
   deadline: { kind: string; label: string };
+  readyDeadline?: { kind: string; label: string } | null;
 };
 export type Category = {
   id: string;
@@ -65,7 +76,21 @@ export type State = {
   periods: Period[];
   reviewRecords: any[];
   scheduleVersions: any[];
+  recurringRules: RecurringRule[];
   audit: Audit[];
+};
+export type RecurringRule = {
+  id: string;
+  category_id: string;
+  title: string;
+  cadence: "weekly" | "monthly" | "quarterly" | "callup";
+  ready_day: number;
+  placement_day: number;
+  enabled: number;
+  topic: string;
+  topic_locked: number;
+  item_count: number;
+  version: number;
 };
 export const statuses: Record<string, string> = {
   IN_PROGRESS: "В работе",
@@ -90,6 +115,8 @@ export const events: Record<string, string> = {
   USER: "Участник изменён",
   TRANSFER_ADMIN: "Администрирование передано",
   CATEGORY: "Категория изменена",
+  SUBDOCUMENT: "Лист беседы изменён",
+  RECURRENCE: "Расписание документов изменено",
 };
 export function fmt(d: string) {
   return new Date(d + "T12:00:00Z").toLocaleDateString("ru-RU", {

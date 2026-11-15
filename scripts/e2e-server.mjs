@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { createApp } from "../server/app.mjs";
 const dir = mkdtempSync(join(tmpdir(), "vpr-e2e-"));
 const { app, db } = createApp({
+  automation: false,
   database: join(dir, "e2e.sqlite"),
   production: false,
   demo: true,

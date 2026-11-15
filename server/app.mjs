@@ -15,6 +15,7 @@ export function createApp(options = {}) {
     botToken: process.env.BOT_TOKEN,
     origin: process.env.APP_ORIGIN || "http://localhost:5173",
     zone: process.env.APP_TIMEZONE || "Europe/Moscow",
+    automation: process.env.AUTOMATIC_DOCUMENTS !== "false",
     ...options,
   };
   demand(!(config.production && config.demo), "DEV_AUTH запрещён в production");
@@ -30,6 +31,7 @@ export function createApp(options = {}) {
   initDb(db, config);
   const store = new Store(db, { zone: config.zone, clock: config.clock });
   if (config.demo && options.seed !== false) seedDemo(store);
+  if (config.automation) store.syncRecurring();
   const app = express();
   app.disable("x-powered-by");
   app.use((req, res, next) => {
@@ -128,7 +130,10 @@ export function createApp(options = {}) {
     db.prepare("DELETE FROM sessions WHERE user_id=?").run(req.actor.id);
     res.json({ ok: true });
   });
-  app.get("/api/state", (req, res) => res.json(store.state(req.actor)));
+  app.get("/api/state", (req, res) => {
+    if (config.automation) store.syncRecurring();
+    res.json(store.state(req.actor));
+  });
   const mutation = (path, fn, method = "post") =>
     app[method](path, (req, res) =>
       res.json(
@@ -142,6 +147,16 @@ export function createApp(options = {}) {
       ),
     );
   mutation("/api/documents", (a, b) => store.create(a, b));
+  mutation(
+    "/api/documents/:id/items/:itemId",
+    (a, b, p) => store.updateItem(a, p.id, p.itemId, b),
+    "patch",
+  );
+  mutation(
+    "/api/recurring-rules/:id",
+    (a, b, p) => store.saveRecurringRule(a, p.id, b),
+    "patch",
+  );
   mutation("/api/documents/:id", (a, b, p) => store.edit(a, p.id, b), "patch");
   mutation("/api/documents/:id/actions/:action", (a, b, p) =>
     store.action(a, p.id, p.action, b),

@@ -30,6 +30,8 @@ import {
 import type { State, Doc, Category, Period, Audit, User } from "./types";
 import { statuses, events, fmt, stamp } from "./types";
 import { api, ApiError, setSessionToken } from "./api";
+import { Dashboard, type DashboardFilter } from "./Dashboard";
+import { RecurringPanel, Subdocuments, ruleDescription } from "./Recurring";
 import "./style.css";
 declare global {
   interface Window {
@@ -37,7 +39,8 @@ declare global {
   }
 }
 const tg = window.Telegram?.WebApp;
-const unitLogo = new URL("./assets/scientific-company.png", import.meta.url).href;
+const unitLogo = new URL("./assets/scientific-company.png", import.meta.url)
+  .href;
 function UnitLogo() {
   return (
     <img
@@ -65,6 +68,7 @@ function App() {
     [view, setView] = useState("home"),
     [category, setCategory] = useState(""),
     [categoryQuery, setCategoryQuery] = useState(""),
+    [dashboardFilter, setDashboardFilter] = useState<DashboardFilter>("all"),
     [modal, setModal] = useState<any>(null),
     [notice, setNotice] = useState(""),
     [error, setError] = useState(""),
@@ -313,7 +317,8 @@ function App() {
       (d) =>
         !d.completed &&
         (["overdue", "today"].includes(d.deadline.kind) ||
-          d.status === "NEEDS_CORRECTION"),
+          d.status === "NEEDS_CORRECTION" ||
+          ["overdue", "today"].includes(d.readyDeadline?.kind || "")),
     ),
     next = s.periods.find((p) => p.end >= s.today) || s.periods.at(-1),
     settingsAllowed = chief || me.admin;
@@ -336,6 +341,7 @@ function App() {
         <nav>
           {[
             ["home", "Обзор", LayoutGrid],
+            ["dashboard", "Таблица", FileText],
             ["reviews", "Проверки", ClipboardCheck],
             ["history", "История", History],
             ...(settingsAllowed ? [["settings", "Управление", Settings]] : []),
@@ -395,11 +401,13 @@ function App() {
                   ? "Рабочее пространство"
                   : view === "category"
                     ? s.categories.find((c) => c.id === category)?.name
-                    : view === "reviews"
-                      ? "Периоды и дополнительные проверки"
-                      : view === "history"
-                        ? "Журнал действий"
-                        : "Настройки приложения"}
+                    : view === "dashboard"
+                      ? "Таблица документов"
+                      : view === "reviews"
+                        ? "Периоды и дополнительные проверки"
+                        : view === "history"
+                          ? "Журнал действий"
+                          : "Настройки приложения"}
               </span>
             </div>
           </div>
@@ -470,12 +478,20 @@ function App() {
                 <Stat
                   icon={<FileText />}
                   label="Всего документов"
+                  onClick={() => {
+                    setDashboardFilter("all");
+                    navigate("dashboard");
+                  }}
                   value={docs.length}
                   foot="Во всех категориях"
                 />
                 <Stat
                   icon={<AlertCircle />}
                   label="Просрочено без вложения"
+                  onClick={() => {
+                    setDashboardFilter("overdue");
+                    navigate("dashboard");
+                  }}
                   value={overdue.length}
                   foot="Требуют внимания"
                   kind="red"
@@ -483,6 +499,10 @@ function App() {
                 <Stat
                   icon={<CheckCheck />}
                   label="Завершено"
+                  onClick={() => {
+                    setDashboardFilter("completed");
+                    navigate("dashboard");
+                  }}
                   value={completed.length}
                   foot="Вложены в журнал"
                   kind="amber"
@@ -596,6 +616,15 @@ function App() {
               </p>
             </>
           )}
+          {view === "dashboard" && (
+            <Dashboard
+              s={s}
+              filter={dashboardFilter}
+              setFilter={setDashboardFilter}
+              open={openDoc}
+              create={() => form(undefined, false, visibleCats[0]?.id)}
+            />
+          )}
           {view === "category" && (
             <CategoryView
               s={s}
@@ -678,6 +707,7 @@ function App() {
             )}
             {modal.type === "doc" && (
               <DocumentDetail
+                run={run}
                 doc={selectedDoc || modal.doc}
                 s={s}
                 busy={busy}
@@ -787,14 +817,14 @@ function App() {
     </div>
   );
 }
-function Stat({ icon, label, value, foot, kind = "primary" }: any) {
+function Stat({ icon, label, value, foot, kind = "primary", onClick }: any) {
   return (
-    <div className={"stat stat-" + kind}>
+    <button className={"stat stat-" + kind} onClick={onClick}>
       <span className={"stat-icon " + kind}>{icon}</span>
       <span className="stat-label">{label}</span>
       <strong>{value}</strong>
       <small>{foot}</small>
-    </div>
+    </button>
   );
 }
 function Empty({ text = "Документов пока нет" }: { text?: string }) {
@@ -839,6 +869,18 @@ function DocumentList({
             </span>
             <span className="doc-main">
               <b>{d.title}</b>
+              {d.topic && (
+                <small className="document-topic">Тема: {d.topic}</small>
+              )}
+              {!!d.items?.length && (
+                <small>
+                  Листы беседы: {d.items.filter((item) => item.ready).length}/
+                  {d.items.length} оформлено
+                </small>
+              )}
+              {d.readyDueDate && (
+                <small>Оформить до {fmt(d.readyDueDate)}</small>
+              )}
               <small>
                 {s.categories.find((c) => c.id === d.categoryId)?.name} · Срок{" "}
                 {fmt(d.dueDate)}
@@ -866,7 +908,9 @@ function CategoryView({ s, id, onOpen, onCreate, back }: any) {
     (d: Doc) =>
       !d.deleted &&
       d.categoryId === id &&
-      d.title.toLocaleLowerCase("ru").includes(query.toLocaleLowerCase("ru")) &&
+      `${d.title} ${d.topic || ""}`
+        .toLocaleLowerCase("ru")
+        .includes(query.toLocaleLowerCase("ru")) &&
       (!status || d.status === status) &&
       (!due || d.deadline.kind === due),
   );
@@ -887,6 +931,13 @@ function CategoryView({ s, id, onOpen, onCreate, back }: any) {
           Создать документ
         </button>
       </div>
+      {s.recurringRules
+        ?.filter((r: any) => r.category_id === id && r.enabled)
+        .map((r: any) => (
+          <p className="recurring-caption" key={r.id}>
+            {ruleDescription(r)}
+          </p>
+        ))}
       <div className="filters">
         <label className="search">
           <Search size={18} />
@@ -930,6 +981,8 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
     editing = old && !modal.copy;
   const [title, setTitle] = useState(old?.title || ""),
     [due, setDue] = useState(editing ? old.dueDate : ""),
+    [readyDue, setReadyDue] = useState(editing ? old.readyDueDate || "" : ""),
+    [topic, setTopic] = useState(old?.topic || ""),
     [cat, setCat] = useState(
       old?.categoryId ||
         modal.categoryId ||
@@ -946,7 +999,10 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
       due !== old.dueDate ||
       cat !== old.categoryId ||
       placementDate !== (old.placement?.date || ""));
-  const reset = changed && old.status === "CONFIRMED";
+  const extraChanged =
+    editing &&
+    (readyDue !== (old.readyDueDate || "") || topic !== (old.topic || ""));
+  const reset = (changed || extraChanged) && old?.status === "CONFIRMED";
   return (
     <form
       onSubmit={(e) => {
@@ -956,6 +1012,8 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
         submit({
           title: title.trim(),
           dueDate: due,
+          readyDueDate: readyDue || null,
+          topic,
           categoryId: cat,
           ...(editing
             ? {
@@ -1009,6 +1067,19 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
         )}
       </label>
       <label className="field">
+        Срок оформления
+        <input
+          type="date"
+          min="1900-01-01"
+          max={due || "2200-12-31"}
+          value={readyDue}
+          onChange={(e) => setReadyDue(e.target.value)}
+        />
+        <small>
+          Когда документ должен быть подготовлен. Вложение отмечается отдельно.
+        </small>
+      </label>
+      <label className="field">
         Срок предоставления
         <input
           type="date"
@@ -1032,6 +1103,30 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
             ))}
         </select>
       </label>
+      {(cat === "category-6" || topic) && (
+        <label className="field">
+          Тема лектория
+          <textarea
+            aria-label="Тема лектория"
+            maxLength={3000}
+            rows={5}
+            value={topic}
+            readOnly={!!(editing && old.recurring?.topicLocked)}
+            onChange={(e) => setTopic(e.target.value)}
+          />
+          {editing && old.recurring?.topicLocked && (
+            <small>
+              Для вторничного информирования установлена постоянная тема.
+            </small>
+          )}
+        </label>
+      )}
+      {cat === "category-9" && !editing && (
+        <p className="muted">
+          В одной месячной карточке будут 40 листов беседы. Их названия можно
+          уточнить после создания.
+        </p>
+      )}
       {editing && old.placement && (
         <label className="field">
           Фактическая дата вложения
@@ -1061,7 +1156,7 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
     </form>
   );
 }
-function DocumentDetail({ doc: d, s, busy, edit, copy, action }: any) {
+function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
   const chief = s.me.role === "CHIEF";
   const mark = (label: string, m: any) => (
     <div className="mark">
@@ -1083,9 +1178,20 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action }: any) {
         <div className="warning">Карточка удалена · только просмотр</div>
       )}
       <Badge status={d.status} />
+      {d.recurring && (
+        <p className="recurring-caption">
+          По расписанию · {fmt(d.recurring.start)} — {fmt(d.recurring.end)}
+        </p>
+      )}
+      {d.topic && (
+        <div className="document-topic-detail">
+          <b>Тема лектория</b>
+          <p>{d.topic}</p>
+        </div>
+      )}
       <div className="detail-dates">
         <div>
-          <small>Срок предоставления</small>
+          <small>Вложить в журнал до</small>
           <b>{fmt(d.dueDate)}</b>
         </div>
         <div>
@@ -1097,6 +1203,11 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action }: any) {
       </div>
       {d.deadline && (
         <p className={"deadline " + d.deadline.kind}>{d.deadline.label}</p>
+      )}
+      {d.readyDueDate && (
+        <p className={"deadline " + d.readyDeadline?.kind}>
+          Оформить до {fmt(d.readyDueDate)} · {d.readyDeadline?.label}
+        </p>
       )}
       {d.completed && !d.deleted && (
         <p className="completion-note">
@@ -1114,13 +1225,18 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action }: any) {
           Последнее изменение: {stamp(d.updatedAt, s.timeZone)}
         </small>
       </div>
+      <Subdocuments doc={d} busy={busy} run={run} />
       {!d.deleted && (
         <>
           <div className="action-grid">
             {["IN_PROGRESS", "NEEDS_CORRECTION"].includes(d.status) && (
               <button
                 className="button secondary"
-                disabled={busy}
+                disabled={
+                  busy ||
+                  (d.items?.length > 0 &&
+                    !d.items.every((item: any) => item.ready))
+                }
                 onClick={() => action(d, "ready")}
               >
                 <Check />
@@ -1133,7 +1249,11 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action }: any) {
               <>
                 <button
                   className="button"
-                  disabled={busy}
+                  disabled={
+                    busy ||
+                    (d.items?.length > 0 &&
+                      !d.items.every((item: any) => item.ready))
+                  }
                   onClick={() => action(d, "place")}
                 >
                   <Folder />
@@ -1142,7 +1262,11 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action }: any) {
                 {chief && (
                   <button
                     className="button"
-                    disabled={busy}
+                    disabled={
+                      busy ||
+                      (d.items?.length > 0 &&
+                        !d.items.every((item: any) => item.ready))
+                    }
                     onClick={() => action(d, "place-confirm")}
                   >
                     <CheckCheck />
@@ -1215,7 +1339,7 @@ function ActionForm({ modal, s, busy, submit }: any) {
     [reason, setReason] = useState(""),
     [confirm, setConfirm] = useState(false);
   const reasons = ["reject", "return", "revoke"].includes(a),
-    placement = ["place", "place-confirm"].includes(a),
+    placement = ["ready", "place", "place-confirm"].includes(a),
     confirmation = ["return", "delete"].includes(a);
   const labels: any = {
     ready: "Документ оформлен",
@@ -1243,7 +1367,9 @@ function ActionForm({ modal, s, busy, submit }: any) {
       <p>{d.title}</p>
       {placement && (
         <label className="field">
-          Фактическая дата вложения
+          {a === "ready"
+            ? "Фактическая дата оформления"
+            : "Фактическая дата вложения"}
           <input
             required
             type="date"
@@ -1317,8 +1443,7 @@ function Reviews({ s, busy, open, run, showModal }: any) {
     : [];
   const unconfirmed = list.filter((d) => d.status === "PLACED");
   const past = s.documents.filter(
-    (d: Doc) =>
-      !d.deleted && !d.completed && p && d.dueDate < p.start,
+    (d: Doc) => !d.deleted && !d.completed && p && d.dueDate < p.start,
   );
   const records = s.reviewRecords.filter((r: any) => r.period_id === p?.id);
   function scope(id: string, c: string) {
@@ -1713,6 +1838,7 @@ function SettingsView({ s, run, busy, setError }: any) {
           <p>Периоды учёта{admin ? ", участники и категории" : ""}.</p>
         </div>
       </div>
+      <RecurringPanel s={s} busy={busy} run={run} />
       <section className="panel">
         <div className="section-title">
           <h2>Периоды учёта и дополнительных проверок</h2>

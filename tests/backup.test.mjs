@@ -11,6 +11,7 @@ test("20: online backup includes WAL and restores data, audit and administrator"
   const source = join(dir, "source.sqlite"),
     destination = join(dir, "backup.sqlite");
   const first = createApp({
+    automation: false,
     database: source,
     demo: true,
     production: false,
@@ -27,6 +28,7 @@ test("20: online backup includes WAL and restores data, audit and administrator"
   });
   first.db.close();
   const restored = createApp({
+    automation: false,
     database: destination,
     demo: true,
     production: false,
@@ -39,6 +41,7 @@ test("20: online backup includes WAL and restores data, audit and administrator"
   assert.throws(
     () =>
       createApp({
+        automation: false,
         database: destination,
         demo: false,
         production: true,

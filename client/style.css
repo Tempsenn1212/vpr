@@ -37,8 +37,7 @@
 body {
   margin: 0;
   background:
-    radial-gradient(ellipse at 100% 0, #c9dcb933, transparent 55%),
-    var(--bg);
+    radial-gradient(ellipse at 100% 0, #c9dcb933, transparent 55%), var(--bg);
 }
 ::selection {
   background: #f4c47466;
@@ -435,6 +434,8 @@ main {
   margin-bottom: 24px;
 }
 .stat {
+  text-align: left;
+  min-width: 0;
   background:
     url("./assets/signal-waves.svg") right bottom / 500px 180px no-repeat,
     linear-gradient(125deg, var(--forest), #17624e);
@@ -452,6 +453,200 @@ main {
     linear-gradient(125deg, var(--gold-panel), #edc370);
   color: var(--on-gold);
   border-color: #dcb362;
+}
+.stat:hover {
+  box-shadow: 0 6px 18px #003f3826;
+}
+.dashboard-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+.dashboard-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--heading-line);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 12px;
+}
+.dashboard-tabs button.active {
+  background: var(--forest);
+  color: #fff;
+  border-color: #bd954a;
+}
+.dashboard-tabs b {
+  color: var(--primary);
+  background: var(--pale);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--heading-line);
+  border-top: 3px solid #bc934e;
+  border-radius: 12px;
+}
+.documents-table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 850px;
+  text-align: left;
+  font-size: 11px;
+}
+.documents-table th {
+  background: var(--forest);
+  color: #fff;
+  padding: 15px;
+  font-weight: 600;
+}
+.documents-table td {
+  padding: 16px 14px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.documents-table td:first-child {
+  min-width: 230px;
+  max-width: 340px;
+}
+.documents-table td:nth-child(2) {
+  min-width: 160px;
+  max-width: 250px;
+}
+.documents-table td:nth-child(3),
+.documents-table td:nth-child(4) {
+  min-width: 135px;
+}
+.documents-table td:nth-child(5) {
+  min-width: 125px;
+}
+.documents-table small {
+  display: block;
+  font-size: 10px;
+  line-height: 1.65;
+  margin-top: 7px;
+  color: var(--muted);
+}
+.documents-table small.overdue,
+.documents-table small.late {
+  color: var(--red);
+}
+.documents-table small.today {
+  color: var(--amber);
+}
+.documents-table small.on-time {
+  color: var(--green);
+}
+.table-title {
+  text-align: left;
+  padding: 0;
+  color: var(--primary);
+  font-weight: 700;
+  line-height: 1.6;
+  font-size: 12px;
+}
+.table-title:hover {
+  text-decoration: underline;
+}
+.table-topic {
+  max-height: 92px;
+  overflow-y: auto;
+}
+.document-topic {
+  line-height: 1.6;
+}
+.document-topic-detail {
+  background: var(--pale);
+  border-left: 3px solid #bc934e;
+  padding: 14px;
+  border-radius: 8px;
+  margin-top: 15px;
+}
+.document-topic-detail p {
+  margin: 8px 0 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.recurring-caption {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 12px 0;
+  line-height: 1.7;
+}
+.rule-details {
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+.rule-details > summary {
+  font-size: 12px;
+  color: var(--text);
+}
+.recurring-rule {
+  margin-top: 15px;
+  padding: 16px;
+  background: var(--bg);
+  border-radius: 10px;
+}
+.recurring-rule h3 {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.recurring-rule .form-row {
+  flex-wrap: wrap;
+}
+.recurring-rule .field {
+  min-width: min(100%, 180px);
+}
+.subdocuments {
+  margin: 24px 0;
+  border: 1px solid var(--heading-line);
+  border-radius: 12px;
+  padding: 16px;
+}
+.subdocuments > p {
+  font-size: 11px;
+  color: var(--muted);
+}
+.subdocuments progress {
+  width: 100%;
+  height: 10px;
+  accent-color: var(--primary);
+}
+.subdocument-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+}
+.subdocument-row .checkbox {
+  flex: 1;
+  min-width: 0;
+  align-items: flex-start;
+  line-height: 1.6;
+}
+.subdocument-row .checkbox span {
+  overflow-wrap: anywhere;
+}
+.subdocument-row small {
+  display: block;
+  font-size: 9px;
+  color: var(--muted);
+}
+.subdocument-row > .text-link {
+  font-size: 10px;
+  padding-top: 1px;
+}
+.subdocument-row > form {
+  width: 100%;
 }
 .stat-amber {
   background:
@@ -1567,6 +1762,21 @@ pre {
   }
 }
 @media (max-width: 760px) {
+  .dashboard-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .dashboard-tabs button {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    padding: 10px;
+    font-size: 10px;
+    line-height: 1.5;
+  }
   .sidebar {
     position: fixed;
     inset: auto 0 0;
@@ -1594,7 +1804,7 @@ pre {
     gap: 4px;
     justify-content: center;
     font-size: 9px;
-    padding: 6px 12px;
+    padding: 6px 8px;
     min-height: 56px;
     margin: 4px 0;
     border-radius: 9px;

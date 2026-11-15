@@ -8,7 +8,11 @@ export function openDb(path) {
   db.exec(
     "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;",
   );
-  const migrations = ["001_initial.sql", "002_document_categories.sql"];
+  const migrations = [
+    "001_initial.sql",
+    "002_document_categories.sql",
+    "003_recurring_documents.sql",
+  ];
   for (const [index, file] of migrations.entries()) {
     if (db.prepare("PRAGMA user_version").get().user_version >= index + 1)
       continue;
@@ -17,7 +21,10 @@ export function openDb(path) {
       // Another process may have migrated while this one waited for the lock.
       if (db.prepare("PRAGMA user_version").get().user_version < index + 1)
         db.exec(
-          readFileSync(new URL(`./migrations/${file}`, import.meta.url), "utf8"),
+          readFileSync(
+            new URL(`./migrations/${file}`, import.meta.url),
+            "utf8",
+          ),
         );
       db.exec("COMMIT");
     } catch (error) {

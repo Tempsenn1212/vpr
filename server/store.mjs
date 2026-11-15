@@ -6,6 +6,7 @@ import {
   addDays,
   today,
   deadline,
+  readyDeadline,
   summary,
   isCompleted,
   periods,
@@ -13,6 +14,11 @@ import {
   transition,
 } from "./domain.mjs";
 import { userRow } from "./db.mjs";
+import { occurrences, SYSTEM_ACTOR_ID } from "./recurrence.mjs";
+const cleanTopic = (value) =>
+  value == null || (typeof value === "string" && !value.trim())
+    ? ""
+    : text(value, "Тема лектория", 3000);
 export class Store {
   constructor(db, { zone = "Europe/Moscow", clock = () => new Date() } = {}) {
     this.db = db;
@@ -29,6 +35,7 @@ export class Store {
     return this.db
       .prepare("SELECT * FROM users ORDER BY name")
       .all()
+      .filter((u) => u.id !== SYSTEM_ACTOR_ID)
       .map(userRow);
   }
   user(id) {
@@ -148,13 +155,16 @@ export class Store {
       throw e;
     }
   }
-  create(actor, b) {
+  create(actor, b, recurring = null) {
     this.category(b.categoryId);
     const d = {
       id: randomUUID(),
       title: text(b.title, "Название"),
       categoryId: b.categoryId,
       dueDate: date(b.dueDate),
+      readyDueDate: b.readyDueDate ? date(b.readyDueDate) : null,
+      topic: cleanTopic(b.topic),
+      recurring,
       status: "IN_PROGRESS",
       version: 1,
       createdBy: { userId: actor.id, name: actor.name },
@@ -166,6 +176,16 @@ export class Store {
       rejection: null,
       deleted: false,
     };
+    demand(
+      !d.readyDueDate || d.readyDueDate <= d.dueDate,
+      "Срок оформления не может быть позже вложения",
+    );
+    const count = b.categoryId === "category-9" ? 40 : 0;
+    d.items = Array.from({ length: count }, (_, i) => ({
+      id: `item-${i + 1}`,
+      label: `Лист беседы №${i + 1}`,
+      ready: null,
+    }));
     this.write(d);
     this.audit(actor, "CREATE", d.id, { after: d });
     return d;
@@ -180,6 +200,27 @@ export class Store {
       categoryId: b.categoryId,
       dueDate: date(b.dueDate),
     };
+    if (b.readyDueDate !== undefined)
+      after.readyDueDate = b.readyDueDate ? date(b.readyDueDate) : null;
+    if (b.topic !== undefined) {
+      demand(
+        !old.recurring?.topicLocked || b.topic === old.topic,
+        "Тема вторничного информирования фиксирована",
+      );
+      after.topic = cleanTopic(b.topic);
+    }
+    demand(
+      !after.readyDueDate || after.readyDueDate <= after.dueDate,
+      "Срок оформления не может быть позже вложения",
+    );
+    demand(
+      !old.items?.length || b.categoryId === old.categoryId,
+      "Месячную группу листов беседы нельзя перенести в другую категорию",
+    );
+    demand(
+      b.categoryId !== "category-9" || old.categoryId === "category-9",
+      "Для листов беседы создайте новую месячную карточку",
+    );
     if (b.placementDate !== undefined) {
       demand(old.placement, "Нет действующего вложения");
       const p = date(b.placementDate);
@@ -188,7 +229,9 @@ export class Store {
     }
     const changed =
       ["title", "categoryId", "dueDate"].some((k) => old[k] !== after[k]) ||
-      old.placement?.date !== after.placement?.date;
+      old.placement?.date !== after.placement?.date ||
+      (old.readyDueDate || null) !== (after.readyDueDate || null) ||
+      (old.topic || "") !== (after.topic || "");
     if (!changed) return old;
     if (old.status === "CONFIRMED") {
       demand(
@@ -205,6 +248,14 @@ export class Store {
   action(actor, id, action, b, batchId = null) {
     const old = this.document(id);
     this.check(old, b.version);
+    if (
+      ["ready", "place", "place-confirm"].includes(action) &&
+      old.items?.length
+    )
+      demand(
+        old.items.every((item) => item.ready),
+        "Сначала оформите все 40 листов беседы",
+      );
     const after = transition(old, action, b, actor, this.now(), this.day());
     return this.commitDocument(
       old,
@@ -220,6 +271,158 @@ export class Store {
     this.check(old, b.version);
     demand(b.confirmed === true, "Подтвердите удаление");
     return this.commitDocument(old, { ...old, deleted: true }, actor, "DELETE");
+  }
+  updateItem(actor, id, itemId, b) {
+    const old = this.document(id);
+    this.check(old, b.version);
+    demand(!isCompleted(old), "Сначала верните месячную группу в работу", 409);
+    demand(
+      old.items?.some((item) => item.id === itemId),
+      "Лист беседы не найден",
+      404,
+    );
+    demand(
+      b.label !== undefined || typeof b.done === "boolean",
+      "Укажите название или отметку оформления",
+    );
+    const after = structuredClone(old);
+    const item = after.items.find((item) => item.id === itemId);
+    const label =
+      b.label !== undefined
+        ? text(b.label, "Название листа беседы", 150)
+        : item.label;
+    if (label !== item.label) {
+      item.label = label;
+      item.ready = null;
+    }
+    if (typeof b.done === "boolean")
+      item.ready = b.done
+        ? item.ready || { userId: actor.id, name: actor.name, at: this.now() }
+        : null;
+    const allReady = after.items.every((item) => item.ready);
+    if (allReady && after.status !== "READY") {
+      after.status = "READY";
+      after.ready = { userId: actor.id, name: actor.name, at: this.now() };
+      after.rejection = null;
+    } else if (!allReady && after.status === "READY") {
+      after.status = "IN_PROGRESS";
+      after.ready = null;
+    }
+    if (JSON.stringify(after) === JSON.stringify(old)) return old;
+    return this.commitDocument(old, after, actor, "SUBDOCUMENT", { itemId });
+  }
+  recurringRules() {
+    return this.db
+      .prepare("SELECT * FROM recurring_rules ORDER BY rowid")
+      .all();
+  }
+  saveRecurringRule(actor, id, b) {
+    demand(
+      actor.admin || actor.role === "CHIEF",
+      "Нет права менять расписание",
+      403,
+    );
+    const rule = this.recurringRules().find((r) => r.id === id);
+    demand(rule, "Расписание не найдено", 404);
+    demand(
+      b.version === rule.version,
+      "Расписание изменено другим участником",
+      409,
+    );
+    demand(typeof b.enabled === "boolean", "Укажите активность расписания");
+    const maxReady = rule.cadence === "weekly" ? 7 : 31;
+    const maxPlace = rule.cadence === "weekly" ? 14 : 31;
+    demand(
+      Number.isInteger(b.ready_day) &&
+        b.ready_day >= 1 &&
+        b.ready_day <= maxReady,
+      "Некорректный день оформления",
+    );
+    demand(
+      Number.isInteger(b.placement_day) &&
+        b.placement_day >= (rule.cadence === "weekly" ? 0 : 1) &&
+        b.placement_day <= maxPlace,
+      "Некорректный день вложения",
+    );
+    demand(
+      b.placement_day === 0 || b.placement_day >= b.ready_day,
+      "Вложение не может быть раньше оформления",
+    );
+    this.db
+      .prepare(
+        "UPDATE recurring_rules SET ready_day=?,placement_day=?,enabled=?,version=version+1 WHERE id=?",
+      )
+      .run(b.ready_day, b.placement_day, b.enabled ? 1 : 0, id);
+    this.db.prepare("DELETE FROM meta WHERE key='recurring_last_sync'").run();
+    const after = this.recurringRules().find((r) => r.id === id);
+    this.audit(actor, "RECURRENCE", null, { before: rule, after });
+    return after;
+  }
+  syncRecurring() {
+    const day = this.day();
+    const last = () =>
+      this.db
+        .prepare("SELECT value FROM meta WHERE key='recurring_last_sync'")
+        .get()?.value;
+    if (last() >= day) return 0;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const from = last() || day;
+      if (from > day) {
+        this.db.exec("COMMIT");
+        return 0;
+      }
+      const actor = this.user(SYSTEM_ACTOR_ID);
+      let created = 0;
+      for (const rule of this.recurringRules()) {
+        if (
+          !rule.enabled ||
+          this.categories().find((c) => c.id === rule.category_id)?.hidden
+        )
+          continue;
+        for (const occurrence of occurrences(rule, from, day)) {
+          if (
+            this.db
+              .prepare(
+                "SELECT 1 FROM recurring_occurrences WHERE rule_id=? AND period_key=?",
+              )
+              .get(rule.id, occurrence.key)
+          )
+            continue;
+          const doc = this.create(
+            actor,
+            {
+              categoryId: rule.category_id,
+              title: `${rule.title} · ${occurrence.label}`,
+              dueDate: occurrence.dueDate,
+              readyDueDate: occurrence.readyDueDate,
+              topic: rule.topic,
+            },
+            {
+              ruleId: rule.id,
+              periodKey: occurrence.key,
+              start: occurrence.start,
+              end: occurrence.end,
+              topicLocked: !!rule.topic_locked,
+            },
+          );
+          this.db
+            .prepare("INSERT INTO recurring_occurrences VALUES(?,?,?)")
+            .run(rule.id, occurrence.key, doc.id);
+          created++;
+        }
+      }
+      this.db
+        .prepare(
+          "INSERT INTO meta VALUES('recurring_last_sync',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        )
+        .run(day);
+      this.db.exec("COMMIT");
+      return created;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
   allVersions() {
     return this.db
@@ -415,6 +618,11 @@ export class Store {
     demand(actor.admin, "Доступно только администратору", 403);
   }
   saveUser(actor, id, b) {
+    demand(
+      id !== SYSTEM_ACTOR_ID,
+      "Системный участник недоступен для изменения",
+      403,
+    );
     this.admin(actor);
     demand(
       b.role === "WORKER" || b.role === "CHIEF",
@@ -493,6 +701,7 @@ export class Store {
       before: old,
       after: { id: nextId, ...b, name },
     });
+    this.db.prepare("DELETE FROM meta WHERE key='recurring_last_sync'").run();
     return { id: nextId };
   }
   state(actor) {
@@ -500,6 +709,7 @@ export class Store {
       ...d,
       completed: isCompleted(d),
       deadline: deadline(d, this.day()),
+      readyDeadline: readyDeadline(d, this.day(), this.zone),
     }));
     const list = this.periodList();
     const records = this.db
@@ -520,6 +730,7 @@ export class Store {
       periods: list,
       reviewRecords: records,
       scheduleVersions: this.allVersions(),
+      recurringRules: this.recurringRules(),
       audit: this.db
         .prepare("SELECT * FROM audit_events ORDER BY seq DESC")
         .all()

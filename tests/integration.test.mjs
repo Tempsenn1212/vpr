@@ -9,6 +9,7 @@ import { validateTelegram } from "../server/auth.mjs";
 const fixed = () => new Date("2026-11-27T12:00:00Z");
 async function fixture(t, extra = {}) {
   const instance = createApp({
+    automation: false,
     database: ":memory:",
     demo: true,
     production: false,
@@ -577,6 +578,7 @@ test("19,20: admin transfer, documents and review snapshot persist across reopen
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const path = join(dir, "test.sqlite");
   let f = createApp({
+    automation: false,
     database: path,
     demo: true,
     production: false,
@@ -597,6 +599,7 @@ test("19,20: admin transfer, documents and review snapshot persist across reopen
   );
   f.db.close();
   f = createApp({
+    automation: false,
     database: path,
     demo: true,
     production: false,
@@ -666,22 +669,33 @@ test("worker placement completes work with no chief confirmation or period revie
   assert.equal(saved.placement.userId, "worker-2");
   assert.equal(state.reviewRecords.length, 0);
   assert.deepEqual(state.audit.map((e) => e.type).sort(), ["CREATE", "PLACE"]);
-  const review = await f.chief.request("/reviews", { periodId: state.periods[0].id });
+  const review = await f.chief.request("/reviews", {
+    periodId: state.periods[0].id,
+  });
   assert.equal(review.status, 200);
   assert.equal(review.data.snapshot.summary.completed, 1);
   assert.equal(review.data.snapshot.summary.unfinished, 0);
   assert.equal(f.store.document(d.id).status, "PLACED");
   assert.equal(
-    (await f.worker.request("/categories/category-1", {
-      name: "Завершённая категория", position: 1, hidden: true,
-    }, "PATCH")).status,
+    (
+      await f.worker.request(
+        "/categories/category-1",
+        {
+          name: "Завершённая категория",
+          position: 1,
+          hidden: true,
+        },
+        "PATCH",
+      )
+    ).status,
     200,
   );
 });
 test("optional confirmation, reset and revocation preserve completion; reject and return reopen work", async (t) => {
   const f = await fixture(t);
   const completed = async (id) =>
-    (await f.worker.request("/state")).data.documents.find((d) => d.id === id).completed;
+    (await f.worker.request("/state")).data.documents.find((d) => d.id === id)
+      .completed;
   let d = await f.create();
   assert.equal(await completed(d.id), false);
   d = await f.action(f.worker, d, "ready");
@@ -689,34 +703,64 @@ test("optional confirmation, reset and revocation preserve completion; reject an
   d = await f.action(f.worker, d, "place", { date: "2026-11-27" });
   d = await f.action(f.chief, d, "confirm");
   assert.equal(await completed(d.id), true);
-  d = await f.action(f.chief, d, "revoke", { reason: "Дополнительная проверка отменена" });
+  d = await f.action(f.chief, d, "revoke", {
+    reason: "Дополнительная проверка отменена",
+  });
   assert.equal(await completed(d.id), true);
   d = await f.action(f.chief, d, "confirm");
-  const edited = await f.worker.request("/documents/" + d.id, {
-    version: d.version, title: "Новое название", categoryId: d.categoryId,
-    dueDate: d.dueDate, acknowledgeReset: true,
-  }, "PATCH");
+  const edited = await f.worker.request(
+    "/documents/" + d.id,
+    {
+      version: d.version,
+      title: "Новое название",
+      categoryId: d.categoryId,
+      dueDate: d.dueDate,
+      acknowledgeReset: true,
+    },
+    "PATCH",
+  );
   assert.equal(edited.status, 200);
   d = edited.data;
   assert.equal(d.confirmation, null);
   assert.equal(await completed(d.id), true);
-  d = await f.action(f.chief, d, "reject", { reason: "Вложения фактически нет" });
+  d = await f.action(f.chief, d, "reject", {
+    reason: "Вложения фактически нет",
+  });
   assert.equal(await completed(d.id), false);
   assert.equal(d.placement, null);
   d = await f.action(f.worker, d, "place", { date: "2026-11-27" });
   assert.equal(await completed(d.id), true);
-  await f.action(f.worker, d, "return", { reason: "Нужна доработка", confirmed: true });
+  await f.action(f.worker, d, "return", {
+    reason: "Нужна доработка",
+    confirmed: true,
+  });
   assert.equal(await completed(d.id), false);
 });
 test("stored PLACED documents become complete after restart without rewriting data or history", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "vpr-optional-review-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const config = { database: join(dir, "existing.sqlite"), demo: true, production: false, seed: false, clock: fixed };
+  const config = {
+    automation: false,
+    database: join(dir, "existing.sqlite"),
+    demo: true,
+    production: false,
+    seed: false,
+    clock: fixed,
+  };
   let instance = createApp(config);
   const worker = instance.store.user("worker-1");
-  let d = instance.store.create(worker, { title: "Существующий документ", categoryId: "category-1", dueDate: "2026-11-27" });
-  d = instance.store.action(worker, d.id, "place", { version: d.version, date: "2026-11-27" });
-  const before = instance.db.prepare("SELECT data FROM documents WHERE id=?").get(d.id).data;
+  let d = instance.store.create(worker, {
+    title: "Существующий документ",
+    categoryId: "category-1",
+    dueDate: "2026-11-27",
+  });
+  d = instance.store.action(worker, d.id, "place", {
+    version: d.version,
+    date: "2026-11-27",
+  });
+  const before = instance.db
+    .prepare("SELECT data FROM documents WHERE id=?")
+    .get(d.id).data;
   const audit = instance.store.state(worker).audit;
   instance.db.close();
   instance = createApp(config);
@@ -725,7 +769,11 @@ test("stored PLACED documents become complete after restart without rewriting da
     assert.equal(state.documents[0].completed, true);
     assert.equal(state.documents[0].confirmation, null);
     assert.equal(state.reviewRecords.length, 0);
-    assert.equal(instance.db.prepare("SELECT data FROM documents WHERE id=?").get(d.id).data, before);
+    assert.equal(
+      instance.db.prepare("SELECT data FROM documents WHERE id=?").get(d.id)
+        .data,
+      before,
+    );
     assert.deepEqual(state.audit, audit);
   } finally {
     instance.db.close();
@@ -735,13 +783,293 @@ test("category names support full long titles through 300 characters", async (t)
   const f = await fixture(t);
   const category = f.store.categories().find((c) => c.id === "category-6");
   assert(category.name.length > 100);
-  const saved = await f.worker.request("/categories/category-6", {
-    name: category.name, position: 6, hidden: false,
-  }, "PATCH");
+  const saved = await f.worker.request(
+    "/categories/category-6",
+    {
+      name: category.name,
+      position: 6,
+      hidden: false,
+    },
+    "PATCH",
+  );
   assert.equal(saved.status, 200);
-  assert.equal(f.store.categories().find((c) => c.id === category.id).name, category.name);
-  assert.equal((await f.worker.request("/categories", { name: "Я".repeat(300), position: 12 })).status, 200);
-  assert.equal((await f.worker.request("/categories", { name: "Я".repeat(301), position: 13 })).status, 400);
+  assert.equal(
+    f.store.categories().find((c) => c.id === category.id).name,
+    category.name,
+  );
+  assert.equal(
+    (
+      await f.worker.request("/categories", {
+        name: "Я".repeat(300),
+        position: 12,
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await f.worker.request("/categories", {
+        name: "Я".repeat(301),
+        position: 13,
+      })
+    ).status,
+    400,
+  );
+});
+test("recurrence API enforces roles, version conflicts, idempotency, protected topic and system identity", async (t) => {
+  const f = await fixture(t, { automation: true });
+  const rule = f.store.recurringRules().find((r) => r.id === "weekly-summary");
+  const body = {
+    version: rule.version,
+    enabled: false,
+    ready_day: 5,
+    placement_day: 7,
+  };
+  assert.equal(
+    (await f.other.request(`/recurring-rules/${rule.id}`, body, "PATCH"))
+      .status,
+    403,
+  );
+  const key = randomUUID();
+  const saved = await f.worker.request(
+    `/recurring-rules/${rule.id}`,
+    body,
+    "PATCH",
+    key,
+  );
+  assert.equal(saved.status, 200);
+  assert.deepEqual(
+    await f.worker.request(`/recurring-rules/${rule.id}`, body, "PATCH", key),
+    saved,
+  );
+  assert.equal(
+    (await f.worker.request(`/recurring-rules/${rule.id}`, body, "PATCH"))
+      .status,
+    409,
+  );
+  assert.equal(
+    (
+      await f.worker.request(
+        `/recurring-rules/${rule.id}`,
+        { ...body, version: saved.data.version, ready_day: 8 },
+        "PATCH",
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (await f.client().request("/auth/demo", { userId: "system-scheduler" }))
+      .status,
+    403,
+  );
+  assert.equal(
+    (
+      await f.worker.request(
+        "/users/system-scheduler",
+        { name: "X", telegramId: "999", role: "CHIEF", active: true },
+        "PATCH",
+      )
+    ).status,
+    403,
+  );
+  const doc = f.store
+    .documents()
+    .find((d) => d.recurring?.ruleId === "inform-tuesday");
+  assert.equal(
+    (
+      await f.worker.request(
+        `/documents/${doc.id}`,
+        {
+          version: doc.version,
+          title: doc.title,
+          categoryId: doc.categoryId,
+          dueDate: doc.dueDate,
+          topic: "Другая тема",
+        },
+        "PATCH",
+      )
+    ).status,
+    400,
+  );
+  assert.equal(f.store.document(doc.id).topic, doc.topic);
+  assert.equal(
+    (
+      await f.worker.request("/documents", {
+        title: "X",
+        categoryId: "category-6",
+        dueDate: "2026-11-30",
+        topic: { bad: true },
+      })
+    ).status,
+    400,
+  );
+});
+test("forty nested items require real readiness before journal placement, with audit and optimistic conflicts", async (t) => {
+  const f = await fixture(t);
+  let d = await f.create({
+    title: "Лист беседы",
+    categoryId: "category-9",
+    readyDueDate: "2026-11-27",
+  });
+  assert.equal(d.items.length, 40);
+  assert.equal(
+    (
+      await f.worker.request(`/documents/${d.id}/actions/place`, {
+        version: d.version,
+        date: "2026-11-27",
+      })
+    ).status,
+    400,
+  );
+  const originalVersion = d.version;
+  for (const item of d.items) {
+    const r = await f.other.request(
+      `/documents/${d.id}/items/${item.id}`,
+      { version: d.version, done: true },
+      "PATCH",
+    );
+    assert.equal(r.status, 200);
+    d = r.data;
+  }
+  assert.equal(d.status, "READY");
+  assert.equal(d.ready.userId, "worker-2");
+  assert.equal(
+    (
+      await f.worker.request(
+        `/documents/${d.id}/items/item-1`,
+        { version: originalVersion, done: false },
+        "PATCH",
+      )
+    ).status,
+    409,
+  );
+  const renamed = await f.worker.request(
+    `/documents/${d.id}/items/item-1`,
+    { version: d.version, label: "Рядовой Тестовый" },
+    "PATCH",
+  );
+  assert.equal(renamed.status, 200);
+  d = renamed.data;
+  assert.equal(d.status, "IN_PROGRESS");
+  assert.equal(d.items[0].ready, null);
+  const ready = await f.worker.request(
+    `/documents/${d.id}/items/item-1`,
+    { version: d.version, done: true },
+    "PATCH",
+  );
+  d = ready.data;
+  d = await f.action(f.worker, d, "place", { date: "2026-11-27" });
+  assert.equal(
+    (
+      await f.other.request(
+        `/documents/${d.id}/items/item-1`,
+        { version: d.version, done: false },
+        "PATCH",
+      )
+    ).status,
+    409,
+  );
+  const state = (await f.worker.request("/state")).data;
+  assert.equal(state.documents.length, 1);
+  assert.equal(state.documents[0].completed, true);
+  assert.equal(state.audit.filter((e) => e.type === "SUBDOCUMENT").length, 42);
+  d = await f.action(f.worker, d, "return", {
+    reason: "Уточнить лист",
+    confirmed: true,
+  });
+  const reopened = await f.other.request(
+    `/documents/${d.id}/items/item-1`,
+    { version: d.version, done: false },
+    "PATCH",
+  );
+  assert.equal(reopened.status, 200);
+  assert.equal(reopened.data.placement, null);
+});
+test("readiness deadline is independent from placement; invalid dates and group moves are rejected", async (t) => {
+  const f = await fixture(t);
+  let d = await f.create({ readyDueDate: "2026-11-25", dueDate: "2026-11-30" });
+  let state = (await f.worker.request("/state")).data;
+  assert.equal(state.documents[0].readyDeadline.kind, "overdue");
+  assert.equal(state.documents[0].deadline.kind, "future");
+  d = await f.action(f.worker, d, "ready");
+  state = (await f.worker.request("/state")).data;
+  assert.equal(state.documents[0].readyDeadline.kind, "late");
+  assert.equal(state.documents[0].deadline.kind, "future");
+  const historical = await f.create({
+    readyDueDate: "2026-11-25",
+    dueDate: "2026-11-30",
+  });
+  assert.equal(
+    (
+      await f.worker.request(`/documents/${historical.id}/actions/ready`, {
+        version: historical.version,
+        date: "2026-11-28",
+      })
+    ).status,
+    400,
+  );
+  const marked = await f.action(f.worker, historical, "ready", {
+    date: "2026-11-25",
+  });
+  assert.equal(marked.ready.at, "2026-11-27T12:00:00.000Z");
+  state = (await f.worker.request("/state")).data;
+  assert.equal(
+    state.documents.find((x) => x.id === historical.id).readyDeadline.kind,
+    "on-time",
+  );
+  assert.equal(
+    (
+      await f.worker.request(
+        `/documents/${d.id}`,
+        {
+          version: d.version,
+          title: d.title,
+          categoryId: "category-9",
+          dueDate: d.dueDate,
+        },
+        "PATCH",
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await f.worker.request("/documents", {
+        title: "X",
+        categoryId: "category-1",
+        dueDate: "2026-11-20",
+        readyDueDate: "2026-11-21",
+      })
+    ).status,
+    400,
+  );
+});
+test("legacy confirmed cards without optional fields save unchanged without losing confirmation", async (t) => {
+  const f = await fixture(t);
+  let d = await f.create();
+  d = await f.action(f.chief, d, "place-confirm", { date: "2026-11-27" });
+  delete d.readyDueDate;
+  delete d.topic;
+  delete d.items;
+  delete d.recurring;
+  f.store.write(d);
+  const before = f.store.state(f.store.user("worker-1")).audit.length;
+  const result = await f.worker.request(
+    `/documents/${d.id}`,
+    {
+      version: d.version,
+      title: d.title,
+      categoryId: d.categoryId,
+      dueDate: d.dueDate,
+      readyDueDate: null,
+      topic: "",
+      acknowledgeReset: false,
+    },
+    "PATCH",
+  );
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.data, d);
+  assert.equal(f.store.state(f.store.user("worker-1")).audit.length, before);
 });
 test("transaction rolls back mutation AND audit on a failing request", async (t) => {
   const f = await fixture(t);
@@ -794,10 +1122,16 @@ test("1: Telegram HMAC checks integrity, age, duplicate keys and future timestam
 });
 test("production fails closed: no demo auth, explicit bootstrap ID required, Telegram unknown blocked", async (t) => {
   assert.throws(() =>
-    createApp({ production: true, demo: true, database: ":memory:" }),
+    createApp({
+      automation: false,
+      production: true,
+      demo: true,
+      database: ":memory:",
+    }),
   );
   assert.throws(() =>
     createApp({
+      automation: false,
       production: true,
       demo: false,
       database: ":memory:",
@@ -806,6 +1140,7 @@ test("production fails closed: no demo auth, explicit bootstrap ID required, Tel
     }),
   );
   const instance = createApp({
+    automation: false,
     production: true,
     demo: false,
     database: ":memory:",

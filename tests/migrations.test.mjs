@@ -8,6 +8,61 @@ import { createApp } from "../server/app.mjs";
 import { initDb, openDb } from "../server/db.mjs";
 import { Store } from "../server/store.mjs";
 
+test("v3 upgrade adds the GDP rule immediately and preserves the checkpoint for catch-up", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "vpr-gdp-upgrade-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const [label, from, expected] of [
+    ["same-day", "2026-11-15", 10],
+    ["catch-up", "2026-11-02", 16],
+  ]) {
+    const path = join(dir, `${label}.sqlite`);
+    let db = new DatabaseSync(path);
+    for (const file of [
+      "001_initial.sql",
+      "002_document_categories.sql",
+      "003_recurring_documents.sql",
+    ])
+      db.exec(
+        readFileSync(
+          new URL(`../server/migrations/${file}`, import.meta.url),
+          "utf8",
+        ),
+      );
+    initDb(db, { demo: true, production: false });
+    const store = new Store(db, { clock: () => new Date(from + "T12:00:00Z") });
+    assert.equal(store.syncRecurring(), 9);
+    const original = store.documents();
+    db.close();
+    const app = createApp({
+      database: path,
+      demo: true,
+      production: false,
+      seed: false,
+      automation: true,
+      clock: () => new Date("2026-11-15T12:00:00Z"),
+    });
+    try {
+      assert.equal(app.store.documents().length, expected);
+      for (const old of original)
+        assert.deepEqual(app.store.document(old.id), old);
+      assert.equal(
+        app.store.recurringRules().filter((r) => r.id === "weekly-gdp-report")
+          .length,
+        1,
+      );
+      assert.equal(app.store.syncRecurring(), 0);
+      assert.equal(
+        app.db
+          .prepare("SELECT value FROM meta WHERE key='recurring_last_sync'")
+          .get().value,
+        "2026-11-15",
+      );
+    } finally {
+      app.db.close();
+    }
+  }
+});
+
 function legacyDatabase(t) {
   const dir = mkdtempSync(join(tmpdir(), "vpr-categories-v1-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -29,7 +84,7 @@ function legacyDatabase(t) {
   return { path, db };
 }
 
-test("new demo and production databases contain the eleven ordered document categories", () => {
+test("new demo and production databases contain the twelve ordered document categories", () => {
   for (const config of [
     { demo: true, production: false },
     {
@@ -48,10 +103,10 @@ test("new demo and production databases contain the eleven ordered document cate
     });
     try {
       const categories = store.categories();
-      assert.equal(categories.length, 11);
+      assert.equal(categories.length, 12);
       assert.deepEqual(
         categories.map((c) => c.position),
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
       );
       assert.equal(categories[0].id, "category-1");
       assert.equal(
@@ -68,8 +123,9 @@ test("new demo and production databases contain the eleven ordered document cate
       );
       assert(categories[5].name.length > 100);
       assert.equal(categories[10].name, "Боевые листки");
+      assert.equal(categories[11].name, "Рапорт ГДП");
       assert(categories.every((c) => !c.hidden));
-      assert.equal(db.prepare("PRAGMA user_version").get().user_version, 3);
+      assert.equal(db.prepare("PRAGMA user_version").get().user_version, 4);
     } finally {
       db.close();
     }
@@ -101,7 +157,7 @@ test("v1 upgrade renames placeholders and adds categories while preserving docum
     const categories = upgraded
       .prepare("SELECT * FROM categories ORDER BY position")
       .all();
-    assert.equal(categories.length, 11);
+    assert.equal(categories.length, 12);
     assert(categories[0].name.startsWith("Планы военно-политической работы"));
     assert(
       categories[1].name.startsWith(
@@ -169,7 +225,7 @@ test("category upgrade preserves custom names, visibility and order; restart doe
   upgraded.close();
   upgraded = openDb(path);
   try {
-    assert.equal(before.length, 12);
+    assert.equal(before.length, 13);
     assert.deepEqual(
       upgraded.prepare("SELECT * FROM categories ORDER BY id").all(),
       before,

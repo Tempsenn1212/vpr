@@ -58,7 +58,14 @@ export function deadline(d, day) {
     return {
       kind: late > 0 ? "late" : "on-time",
       days: Math.max(0, late),
-      label: late > 0 ? `Вложен с опозданием на ${late} дней` : "Вложен в срок",
+      label:
+        d.categoryId === "category-12"
+          ? late > 0
+            ? `Сдан с опозданием на ${late} дней`
+            : "Сдан в срок"
+          : late > 0
+            ? `Вложен с опозданием на ${late} дней`
+            : "Вложен в срок",
     };
   }
   const left = days(d.dueDate, day);

@@ -25,7 +25,7 @@ export function ruleDescription(rule: RecurringRule) {
     quarterly: "Каждый квартал, последний месяц",
     callup: "В июле и декабре",
   }[rule.cadence];
-  return `${period}. Оформить: ${dayLabel(rule, rule.ready_day)}. Вложить: ${dayLabel(rule, rule.placement_day)}.`;
+  return `${period}. Оформить: ${dayLabel(rule, rule.ready_day)}. ${rule.category_id === "category-12" ? "Сдать" : "Вложить"}: ${dayLabel(rule, rule.placement_day)}.`;
 }
 function RuleEditor({ rule, busy, run }: any) {
   const [enabled, setEnabled] = useState(!!rule.enabled),
@@ -81,9 +81,9 @@ function RuleEditor({ rule, busy, run }: any) {
           </select>
         </label>
         <label className="field">
-          Вложить в журнал
+          {rule.category_id === "category-12" ? "Сдать" : "Вложить в журнал"}
           <select
-            aria-label={`Вложение: ${rule.title}`}
+            aria-label={`${rule.category_id === "category-12" ? "Сдача" : "Вложение"}: ${rule.title}`}
             value={placement}
             onChange={(e) => setPlacement(Number(e.target.value))}
           >

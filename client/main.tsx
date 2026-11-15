@@ -28,10 +28,19 @@ import {
   Filter,
 } from "lucide-react";
 import type { State, Doc, Category, Period, Audit, User } from "./types";
-import { statuses, events, fmt, stamp } from "./types";
+import {
+  statuses,
+  events,
+  fmt,
+  stamp,
+  isSubmission,
+  statusText,
+  eventText,
+} from "./types";
 import { api, ApiError, setSessionToken } from "./api";
 import { Dashboard, type DashboardFilter } from "./Dashboard";
 import { RecurringPanel, Subdocuments, ruleDescription } from "./Recurring";
+import { CategorySelect } from "./CategorySelect";
 import "./style.css";
 declare global {
   interface Window {
@@ -53,11 +62,17 @@ function UnitLogo() {
     />
   );
 }
-function Badge({ status }: { status: string }) {
+function Badge({
+  status,
+  doc,
+}: {
+  status: string;
+  doc?: { categoryId?: string };
+}) {
   return (
     <span className={"badge " + status.toLowerCase()}>
       <span className="dot" />
-      {statuses[status]}
+      {statusText(status, doc)}
     </span>
   );
 }
@@ -463,7 +478,8 @@ function App() {
                     {me.name} · {chief ? "Начальник" : "Работник"}
                     {me.admin ? " · Администратор" : ""}
                     <br />
-                    Сроки и вложения — в одном месте. Проверка необязательна.
+                    Сроки и сдача документов — в одном месте. Проверка
+                    необязательна.
                   </p>
                 </div>
                 <button
@@ -504,7 +520,7 @@ function App() {
                     navigate("dashboard");
                   }}
                   value={completed.length}
-                  foot="Вложены в журнал"
+                  foot="Вложены в журнал или сданы"
                   kind="amber"
                 />
               </section>
@@ -890,7 +906,7 @@ function DocumentList({
               </span>
             </span>
             <span className="doc-status">
-              <Badge status={d.status} />
+              <Badge status={d.status} doc={d} />
               <ChevronRight size={17} />
             </span>
           </button>
@@ -955,7 +971,7 @@ function CategoryView({ s, id, onOpen, onCreate, back }: any) {
           <option value="">Все статусы</option>
           {Object.entries(statuses).map(([k, v]) => (
             <option key={k} value={k}>
-              {v}
+              {statusText(k, { categoryId: id })}
             </option>
           ))}
         </select>
@@ -965,11 +981,21 @@ function CategoryView({ s, id, onOpen, onCreate, back }: any) {
           onChange={(e) => setDue(e.target.value)}
         >
           <option value="">Все сроки</option>
-          <option value="overdue">Просрочено без вложения</option>
+          <option value="overdue">
+            {id === "category-12"
+              ? "Просрочено без сдачи"
+              : "Просрочено без вложения"}
+          </option>
           <option value="today">Срок сегодня</option>
           <option value="future">Срок впереди</option>
-          <option value="late">Вложено с опозданием</option>
-          <option value="on-time">Вложено в срок</option>
+          <option value="late">
+            {id === "category-12"
+              ? "Сдан с опозданием"
+              : "Вложено с опозданием"}
+          </option>
+          <option value="on-time">
+            {id === "category-12" ? "Сдан в срок" : "Вложено в срок"}
+          </option>
         </select>
       </div>
       <DocumentList docs={docs} s={s} onOpen={onOpen} />
@@ -1076,7 +1102,9 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
           onChange={(e) => setReadyDue(e.target.value)}
         />
         <small>
-          Когда документ должен быть подготовлен. Вложение отмечается отдельно.
+          {cat === "category-12"
+            ? "Когда рапорт должен быть подготовлен. Сдача отмечается отдельно."
+            : "Когда документ должен быть подготовлен. Вложение отмечается отдельно."}
         </small>
       </label>
       <label className="field">
@@ -1090,19 +1118,20 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
         />
         {attempt && !due && <span className="field-error">Укажите срок</span>}
       </label>
-      <label className="field">
-        Категория
-        <select value={cat} onChange={(e) => setCat(e.target.value)}>
-          {s.categories
+      <div className="field">
+        <span>Категория</span>
+        <CategorySelect
+          categories={s.categories
             .filter((c: Category) => !c.hidden || c.id === old?.categoryId)
-            .map((c: Category) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-                {c.hidden ? " (скрыта)" : ""}
-              </option>
-            ))}
-        </select>
-      </label>
+            .map((c: Category) => ({
+              ...c,
+              name: c.name + (c.hidden ? " (скрыта)" : ""),
+            }))}
+          value={cat}
+          onChange={setCat}
+          required
+        />
+      </div>
       {(cat === "category-6" || topic) && (
         <label className="field">
           Тема лектория
@@ -1129,7 +1158,9 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
       )}
       {editing && old.placement && (
         <label className="field">
-          Фактическая дата вложения
+          {cat === "category-12"
+            ? "Фактическая дата сдачи"
+            : "Фактическая дата вложения"}
           <input
             type="date"
             min="1900-01-01"
@@ -1147,7 +1178,7 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
             onChange={(e) => setAck(e.target.checked)}
           />
           При сохранении дополнительное подтверждение будет снято. Документ
-          останется завершённым и вложенным в журнал. История сохранится.
+          останется завершённым. История сохранится.
         </label>
       )}
       <button disabled={busy} className="button full" type="submit">
@@ -1158,6 +1189,7 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
 }
 function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
   const chief = s.me.role === "CHIEF";
+  const submission = isSubmission(d);
   const mark = (label: string, m: any) => (
     <div className="mark">
       <b>{label}</b>
@@ -1177,7 +1209,7 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
       {d.deleted && (
         <div className="warning">Карточка удалена · только просмотр</div>
       )}
-      <Badge status={d.status} />
+      <Badge status={d.status} doc={d} />
       {d.recurring && (
         <p className="recurring-caption">
           По расписанию · {fmt(d.recurring.start)} — {fmt(d.recurring.end)}
@@ -1191,7 +1223,7 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
       )}
       <div className="detail-dates">
         <div>
-          <small>Вложить в журнал до</small>
+          <small>{submission ? "Сдать до" : "Вложить в журнал до"}</small>
           <b>{fmt(d.dueDate)}</b>
         </div>
         <div>
@@ -1212,13 +1244,19 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
       {d.completed && !d.deleted && (
         <p className="completion-note">
           <CheckCheck size={18} />
-          <span>Документ завершён. Дополнительная проверка необязательна.</span>
+          <span>
+            {submission
+              ? "Рапорт сдан. Документ завершён."
+              : "Документ завершён."}{" "}
+            Дополнительная проверка необязательна.
+          </span>
         </p>
       )}
       <div className="marks">
         {mark("Создал", { ...d.createdBy, at: d.createdAt })}
         {d.ready && mark("Документ оформлен", d.ready)}
-        {d.placement && mark("Вложение отмечено", d.placement)}
+        {d.placement &&
+          mark(submission ? "Сдал" : "Вложение отмечено", d.placement)}
         {d.confirmation && mark("Подтверждено", d.confirmation)}
         {d.rejection && mark("Отметка отклонена", d.rejection)}
         <small className="muted">
@@ -1257,7 +1295,7 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
                   onClick={() => action(d, "place")}
                 >
                   <Folder />
-                  Вложен в журнал
+                  {submission ? "Сдан" : "Вложен в журнал"}
                 </button>
                 {chief && (
                   <button
@@ -1270,7 +1308,7 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
                     onClick={() => action(d, "place-confirm")}
                   >
                     <CheckCheck />
-                    Вложен и подтверждён
+                    {submission ? "Сдан и подтверждён" : "Вложен и подтверждён"}
                   </button>
                 )}
               </>
@@ -1283,7 +1321,7 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
                   onClick={() => action(d, "confirm")}
                 >
                   <ShieldCheck />
-                  Подтвердить вложение
+                  {submission ? "Подтвердить сдачу" : "Подтвердить вложение"}
                 </button>
                 <button
                   className="button danger"
@@ -1351,6 +1389,17 @@ function ActionForm({ modal, s, busy, submit }: any) {
     revoke: "Отозвать подтверждение",
     delete: "Удалить карточку",
   };
+  if (isSubmission(d)) {
+    labels.place = "Сдан";
+    labels["place-confirm"] = "Сдан и подтверждён";
+    labels.confirm = "Подтвердить сдачу";
+  }
+  const dateLabel =
+    a === "ready"
+      ? "Фактическая дата оформления"
+      : isSubmission(d)
+        ? "Фактическая дата сдачи"
+        : "Фактическая дата вложения";
   return (
     <form
       onSubmit={(e) => {
@@ -1367,10 +1416,9 @@ function ActionForm({ modal, s, busy, submit }: any) {
       <p>{d.title}</p>
       {placement && (
         <label className="field">
-          {a === "ready"
-            ? "Фактическая дата оформления"
-            : "Фактическая дата вложения"}
+          {dateLabel}
           <input
+            aria-label={dateLabel}
             required
             type="date"
             min="1900-01-01"
@@ -1466,8 +1514,8 @@ function Reviews({ s, busy, open, run, showModal }: any) {
           <div className="eyebrow">ДОПОЛНИТЕЛЬНЫЙ КОНТРОЛЬ</div>
           <h1>Проверки документов</h1>
           <p>
-            Вложение в журнал завершает документ. Проверка и фиксация итогов
-            периода — по желанию.
+            Вложение в журнал или сдача рапорта завершает документ. Проверка и
+            фиксация итогов периода — по желанию.
           </p>
         </div>
         {chief && p && (
@@ -1497,21 +1545,17 @@ function Reviews({ s, busy, open, run, showModal }: any) {
             ))}
           </select>
         </label>
-        <label className="field compact">
-          Область выбора
-          <select
-            aria-label="Категория проверки"
+        <div className="field compact">
+          <span>Область выбора</span>
+          <CategorySelect
+            label="Категория проверки"
+            categories={s.categories}
             value={cat}
-            onChange={(e) => scope(periodId, e.target.value)}
-          >
-            <option value="ALL">Все категории</option>
-            {s.categories.map((c: Category) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
+            onChange={(value) => scope(periodId, value)}
+            allLabel="Все категории"
+            allValue="ALL"
+          />
+        </div>
       </div>
       {!p ? (
         <Empty text="Первый период ещё не настроен" />
@@ -1533,7 +1577,17 @@ function Reviews({ s, busy, open, run, showModal }: any) {
             {Object.entries(statuses).map(([k, v]) => (
               <div key={k}>
                 <b>{list.filter((d) => d.status === k).length}</b>
-                <span>{v}</span>
+                <span>
+                  {cat === "ALL"
+                    ? (
+                        {
+                          READY: "Оформлен",
+                          PLACED: "Завершён",
+                          CONFIRMED: "Дополнительно подтверждён",
+                        } as Record<string, string>
+                      )[k] || v
+                    : statusText(k, { categoryId: cat })}
+                </span>
               </div>
             ))}
           </div>
@@ -1542,7 +1596,11 @@ function Reviews({ s, busy, open, run, showModal }: any) {
               <label>
                 <input
                   type="checkbox"
-                  aria-label="Выбрать вложенные"
+                  aria-label={
+                    cat === "category-12"
+                      ? "Выбрать сданные"
+                      : "Выбрать вложенные"
+                  }
                   checked={
                     unconfirmed.length > 0 &&
                     unconfirmed.every((d) => selected.has(d.id))
@@ -1621,7 +1679,14 @@ function Reviews({ s, busy, open, run, showModal }: any) {
               <ul>
                 {Object.entries(statuses).map(([k, v]) => (
                   <li key={k}>
-                    {v}: {r.snapshot.summary[k]}
+                    {(
+                      {
+                        READY: "Оформлен",
+                        PLACED: "Завершён",
+                        CONFIRMED: "Дополнительно подтверждён",
+                      } as Record<string, string>
+                    )[k] || v}
+                    : {r.snapshot.summary[k]}
                   </li>
                 ))}
               </ul>
@@ -1631,7 +1696,7 @@ function Reviews({ s, busy, open, run, showModal }: any) {
                   <span>
                     Версия {d.version} · Срок {fmt(d.dueDate)}
                   </span>
-                  <Badge status={d.status} />
+                  <Badge status={d.status} doc={d} />
                 </div>
               ))}
             </details>
@@ -1663,7 +1728,7 @@ function AuditList({
           <div className="audit-event" key={e.id}>
             <span className="timeline-dot" />
             <div>
-              <b>{events[e.type] || e.type}</b>
+              <b>{eventText(e) || e.type}</b>
               {open && d && (
                 <button className="text-link" onClick={() => open(d)}>
                   {d.title}
@@ -1694,7 +1759,7 @@ function AuditList({
                         :{" "}
                         <del>
                           {k === "status"
-                            ? statuses[before[k]]
+                            ? statusText(before[k], before)
                             : k === "categoryId"
                               ? e.data.categoryNames?.[before[k]] ||
                                 s.categories.find((c) => c.id === before[k])
@@ -1705,7 +1770,7 @@ function AuditList({
                         →{" "}
                         <span>
                           {k === "status"
-                            ? statuses[after[k]]
+                            ? statusText(after[k], after)
                             : k === "categoryId"
                               ? e.data.categoryNames?.[after[k]] ||
                                 s.categories.find((c) => c.id === after[k])
@@ -1717,7 +1782,8 @@ function AuditList({
                     ))}
                   {before.placement?.date !== after.placement?.date && (
                     <p>
-                      Дата вложения: {before.placement?.date || "—"} →{" "}
+                      {isSubmission(after) ? "Дата сдачи" : "Дата вложения"}:{" "}
+                      {before.placement?.date || "—"} →{" "}
                       {after.placement?.date || "—"}
                     </p>
                   )}

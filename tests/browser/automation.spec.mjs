@@ -43,6 +43,124 @@ async function mutate(page, app, path, body, method = "post") {
   expect(response.status()).toBe(200);
   return response.json();
 }
+test("branded category picker preserves a draft, supports keyboard search and selects the GDP category", async ({
+  page,
+  recurringApp: app,
+}) => {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.setViewportSize({ width: 360, height: 844 });
+  await login(page, app);
+  await page
+    .getByRole("button", { name: "Создать документ", exact: true })
+    .click();
+  await page.getByLabel("Название", { exact: true }).fill("Черновик рапорта");
+  await page
+    .getByLabel("Срок предоставления", { exact: true })
+    .fill("2026-11-16");
+  const combo = page.getByRole("combobox", { name: "Категория", exact: true });
+  await combo.click();
+  await expect(combo).toHaveAttribute("aria-expanded", "true");
+  await page.setViewportSize({ width: 320, height: 760 });
+  await expect
+    .poll(
+      async () =>
+        (await page.locator(".category-select-popup").boundingBox()).width,
+    )
+    .toBeLessThanOrEqual(296);
+  const search = page.getByRole("textbox", {
+    name: "Поиск в списке категорий",
+    exact: true,
+  });
+  await search.fill("НЕСУЩЕСТВУЮЩАЯ");
+  await expect(
+    page.getByText("Категории не найдены", { exact: true }),
+  ).toBeVisible();
+  await search.press("Escape");
+  await expect(combo).toBeFocused();
+  await expect(page.getByLabel("Название", { exact: true })).toHaveValue(
+    "Черновик рапорта",
+  );
+  await combo.press("ArrowDown");
+  await page
+    .getByRole("textbox", { name: "Поиск в списке категорий", exact: true })
+    .fill("рапорт");
+  await expect(page.getByRole("option")).toHaveCount(1);
+  await page
+    .getByRole("textbox", { name: "Поиск в списке категорий", exact: true })
+    .press("Enter");
+  await expect(combo).toContainText("Рапорт ГДП");
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await combo.click();
+  await page
+    .getByRole("textbox", { name: "Поиск в списке категорий", exact: true })
+    .press("Tab");
+  await expect(
+    page.getByRole("button", { name: "Сохранить документ", exact: true }),
+  ).toBeFocused();
+  await page
+    .getByRole("button", { name: "Сохранить документ", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  const state = await (await page.request.get(app.url + "/api/state")).json();
+  expect(
+    state.documents.find((d) => d.title === "Черновик рапорта").categoryId,
+  ).toBe("category-12");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+  ).toBe(false);
+  expect(errors).toEqual([]);
+});
+test("weekly GDP report is submitted with dedicated labels in its card, table and history", async ({
+  page,
+  recurringApp: app,
+}) => {
+  await login(page, app);
+  await page
+    .locator(".category-card")
+    .filter({ hasText: "Рапорт ГДП" })
+    .click();
+  await page
+    .locator(".document-row")
+    .getByRole("button", { name: /Рапорт ГДП/ })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("Сдать до", { exact: true })).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Вложен в журнал", exact: true }),
+  ).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Сдан", exact: true }).click();
+  await page
+    .getByLabel("Фактическая дата сдачи", { exact: true })
+    .fill("2026-11-09");
+  await dialog.getByRole("button", { name: "Сдан", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await page
+    .locator(".document-row")
+    .getByRole("button", { name: /Рапорт ГДП/ })
+    .click();
+  await expect(dialog.locator(".badge")).toHaveText("Сдан");
+  await expect(
+    dialog.locator(".audit-event b").filter({ hasText: "Рапорт сдан" }),
+  ).toBeVisible();
+  await expect(dialog.locator(".deadline.on-time")).toHaveCount(2);
+  await page.getByRole("button", { name: "Закрыть окно", exact: true }).click();
+  await page
+    .locator("nav")
+    .getByRole("button", { name: "Таблица", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Категория в таблице", exact: true })
+    .click();
+  await page.getByRole("option", { name: "Рапорт ГДП", exact: true }).click();
+  await expect(
+    page.getByRole("columnheader", { name: "Сдать до", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator("tbody .badge")).toHaveText("Сдан");
+  await expect(page.locator("tbody")).toContainText("Сдан в срок");
+});
 test("summary cards open the correct table, filters match state and manual records remain available", async ({
   page,
   recurringApp: app,
@@ -64,7 +182,7 @@ test("summary cards open the correct table, filters match state and manual recor
     .documents;
   for (const [label, key, count] of [
     ["Всего документов", "all", docs.length],
-    ["Просрочено без вложения", "overdue", 1],
+    ["Просрочено без вложения", "overdue", 2],
     ["Завершено", "completed", 1],
   ]) {
     await page
@@ -86,7 +204,14 @@ test("summary cards open the correct table, filters match state and manual recor
     .locator(".dashboard-tabs")
     .getByRole("button", { name: /Всего документов/ })
     .click();
-  await page.getByLabel("Категория в таблице").selectOption("category-2");
+  await page
+    .getByRole("combobox", { name: "Категория в таблице", exact: true })
+    .click();
+  await page
+    .getByRole("option", {
+      name: /^Планы основных культурно-досуговых мероприятий/,
+    })
+    .click();
   await expect(page.locator("tbody tr")).toHaveCount(1);
   await page.getByLabel("Поиск документов в таблице").fill("НЕ НАЙДЕНО");
   await expect(

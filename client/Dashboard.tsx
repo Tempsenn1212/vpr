@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Search } from "lucide-react";
-import { fmt, statuses, type Doc, type State } from "./types";
+import { fmt, statusText, type Doc, type State } from "./types";
+import { CategorySelect } from "./CategorySelect";
 export type DashboardFilter = "all" | "overdue" | "completed";
 export function Dashboard({
   s,
@@ -43,7 +44,12 @@ export function Dashboard({
     );
   const tabs: [DashboardFilter, string][] = [
     ["all", "Всего документов"],
-    ["overdue", "Просрочено без вложения"],
+    [
+      "overdue",
+      category === "category-12"
+        ? "Просрочено без сдачи"
+        : "Просрочено без вложения",
+    ],
     ["completed", "Завершено"],
   ];
   return (
@@ -52,7 +58,10 @@ export function Dashboard({
         <div>
           <div className="eyebrow">ОБЩИЙ УЧЁТ</div>
           <h1>Таблица документов</h1>
-          <p>Оформление, вложение в журнал и выполнение месячных групп.</p>
+          <p>
+            Оформление, вложение в журнал, сдача рапортов и выполнение месячных
+            групп.
+          </p>
         </div>
         <button className="button" onClick={create}>
           Создать документ
@@ -81,24 +90,19 @@ export function Dashboard({
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <select
-          aria-label="Категория в таблице"
+        <CategorySelect
+          label="Категория в таблице"
+          categories={s.categories}
           value={category}
-          onChange={(e) => setCategory(e.target.value)}
-        >
-          <option value="">Все категории</option>
-          {s.categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+          onChange={setCategory}
+          allLabel="Все категории"
+        />
         <select
           aria-label="Порядок в таблице"
           value={sort}
           onChange={(e) => setSort(e.target.value)}
         >
-          <option value="due">По сроку вложения</option>
+          <option value="due">По сроку вложения / сдачи</option>
           <option value="ready">По сроку оформления</option>
           <option value="title">По названию</option>
         </select>
@@ -120,9 +124,11 @@ export function Dashboard({
                 "Документ",
                 "Категория",
                 "Оформить до",
-                "Вложить до",
+                category === "category-12" ? "Сдать до" : "Вложить / сдать до",
                 "Статус",
-                "Фактически вложен",
+                category === "category-12"
+                  ? "Фактически сдан"
+                  : "Вложен / сдан",
               ].map((label) => (
                 <th key={label} scope="col">
                   {label}
@@ -166,7 +172,7 @@ export function Dashboard({
                 <td>
                   <span className={"badge " + d.status.toLowerCase()}>
                     <span className="dot" />
-                    {statuses[d.status]}
+                    {statusText(d.status, d)}
                   </span>
                 </td>
                 <td>{d.placement ? fmt(d.placement.date!) : "—"}</td>

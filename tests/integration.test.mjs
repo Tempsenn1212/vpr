@@ -1071,6 +1071,32 @@ test("legacy confirmed cards without optional fields save unchanged without losi
   assert.deepEqual(result.data, d);
   assert.equal(f.store.state(f.store.user("worker-1")).audit.length, before);
 });
+test("GDP report uses the same secure completion workflow with submission deadline wording", async (t) => {
+  const f = await fixture(t, { automation: true });
+  const report = f.store
+    .documents()
+    .find((d) => d.recurring?.ruleId === "weekly-gdp-report");
+  assert.equal(report.dueDate, "2026-11-23");
+  const saved = await f.action(f.other, report, "place", {
+    date: "2026-11-23",
+  });
+  const state = (await f.worker.request("/state")).data;
+  const doc = state.documents.find((d) => d.id === saved.id);
+  assert.equal(doc.completed, true);
+  assert.equal(doc.confirmation, null);
+  assert.equal(doc.deadline.label, "Сдан в срок");
+  assert.equal(doc.placement.userId, "worker-2");
+  const manual = await f.create({
+    title: "Рапорт ГДП",
+    categoryId: "category-12",
+    dueDate: "2026-11-20",
+  });
+  await f.action(f.worker, manual, "place", { date: "2026-11-21" });
+  const late = (await f.worker.request("/state")).data.documents.find(
+    (d) => d.id === manual.id,
+  );
+  assert.equal(late.deadline.label, "Сдан с опозданием на 1 дней");
+});
 test("transaction rolls back mutation AND audit on a failing request", async (t) => {
   const f = await fixture(t);
   const actor = f.store.user("worker-1");

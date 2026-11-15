@@ -99,6 +99,22 @@ export const statuses: Record<string, string> = {
   CONFIRMED: "Вложение подтверждено",
   NEEDS_CORRECTION: "Требует исправления",
 };
+export const isSubmission = (doc: { categoryId?: string }) =>
+  doc.categoryId === "category-12";
+export function statusText(status: string, doc?: { categoryId?: string }) {
+  if (doc && isSubmission(doc)) {
+    return (
+      (
+        {
+          READY: "Оформлен, ожидает сдачи",
+          PLACED: "Сдан",
+          CONFIRMED: "Сдача подтверждена",
+        } as Record<string, string>
+      )[status] || statuses[status]
+    );
+  }
+  return statuses[status];
+}
 export const events: Record<string, string> = {
   CREATE: "Карточка создана",
   EDIT: "Поля изменены",
@@ -118,6 +134,21 @@ export const events: Record<string, string> = {
   SUBDOCUMENT: "Лист беседы изменён",
   RECURRENCE: "Расписание документов изменено",
 };
+export function eventText(event: Audit) {
+  const doc = event.data.after || event.data.before;
+  if (doc && isSubmission(doc)) {
+    return (
+      (
+        {
+          PLACE: "Рапорт сдан",
+          CONFIRM: "Сдача подтверждена",
+          "PLACE-CONFIRM": "Рапорт сдан и подтверждён",
+        } as Record<string, string>
+      )[event.type] || events[event.type]
+    );
+  }
+  return events[event.type];
+}
 export function fmt(d: string) {
   return new Date(d + "T12:00:00Z").toLocaleDateString("ru-RU", {
     day: "numeric",

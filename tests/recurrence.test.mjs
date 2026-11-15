@@ -42,6 +42,14 @@ test("calendar recurrence respects separate weekly deadlines, following Saturday
     ],
     ["2026-11-13", "2026-11-15"],
   );
+  for (const [day, expected] of [
+    ["2026-11-15", "2026-11-09"],
+    ["2026-11-16", "2026-11-16"],
+    ["2027-01-04", "2027-01-04"],
+  ]) {
+    assert.equal(get("weekly-gdp-report", day).readyDueDate, expected);
+    assert.equal(get("weekly-gdp-report", day).dueDate, expected);
+  }
   assert.deepEqual(
     [
       get("weekly-battle", "2026-11-15").readyDueDate,
@@ -91,7 +99,7 @@ test("calendar recurrence clamps month ends, uses calendar quarters, and generat
 });
 test("initial synchronization creates current periods once, four category-six types and one nested group of forty", (t) => {
   const { store } = fixture(t);
-  assert.equal(store.syncRecurring(), 9);
+  assert.equal(store.syncRecurring(), 10);
   const docs = store.documents();
   assert.equal(docs.filter((d) => d.categoryId === "category-6").length, 4);
   assert.equal(docs.filter((d) => d.categoryId === "category-9").length, 1);
@@ -125,7 +133,7 @@ test("initial synchronization creates current periods once, four category-six ty
   assert(topic.endsWith("в системе национальной безопасности."));
   assert.equal(store.users().length, 5);
   assert.equal(store.syncRecurring(), 0);
-  assert.equal(store.state(store.user("worker-1")).audit.length, 9);
+  assert.equal(store.state(store.user("worker-1")).audit.length, 10);
 });
 test("downtime catchup generates missed periods once and preserves soft-deleted occurrences", (t) => {
   const f = fixture(t);
@@ -136,8 +144,8 @@ test("downtime catchup generates missed periods once and preserves soft-deleted 
     confirmed: true,
   });
   f.advance("2026-12-16T12:00:00Z");
-  assert.equal(f.store.syncRecurring(), 29);
-  assert.equal(f.store.documents().length, 38);
+  assert.equal(f.store.syncRecurring(), 34);
+  assert.equal(f.store.documents().length, 44);
   assert.equal(
     f.store
       .documents()
@@ -200,7 +208,7 @@ test("a failed generation rolls back cards, occurrence keys, audit and checkpoin
     undefined,
   );
   store.create = create;
-  assert.equal(store.syncRecurring(), 9);
+  assert.equal(store.syncRecurring(), 10);
 });
 test("background scheduler creates cards without an open browser and stops cleanly", async (t) => {
   const f = fixture(t);
@@ -211,13 +219,13 @@ test("background scheduler creates cards without an open browser and stops clean
   });
   try {
     for (let i = 0; i < 20 && !f.store.documents().length; i++) await pause(10);
-    assert.equal(f.store.documents().length, 9);
+    assert.equal(f.store.documents().length, 10);
   } finally {
     stop();
   }
   f.advance("2026-12-01T12:00:00Z");
   await pause(30);
-  assert.equal(f.store.documents().length, 9);
+  assert.equal(f.store.documents().length, 10);
   assert.deepEqual(errors, []);
 });
 test("rule edits affect future cards; disabled or hidden rules do not generate cards", (t) => {
@@ -228,7 +236,7 @@ test("rule edits affect future cards; disabled or hidden rules do not generate c
     position: 6,
     hidden: true,
   });
-  assert.equal(f.store.syncRecurring(), 5);
+  assert.equal(f.store.syncRecurring(), 6);
   const rule = f.store.recurringRules().find((r) => r.id === "monthly-vpr");
   const old = f.store.documents().find((d) => d.recurring.ruleId === rule.id);
   f.store.saveRecurringRule(actor, rule.id, {

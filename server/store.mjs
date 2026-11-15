@@ -316,6 +316,13 @@ export class Store {
       .prepare("SELECT * FROM recurring_rules ORDER BY rowid")
       .all();
   }
+  invalidateRecurring() {
+    this.db
+      .prepare(
+        "INSERT INTO meta(key,value) VALUES('recurring_rules_changed','true') ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+      )
+      .run();
+  }
   saveRecurringRule(actor, id, b) {
     demand(
       actor.admin || actor.role === "CHIEF",
@@ -353,7 +360,7 @@ export class Store {
         "UPDATE recurring_rules SET ready_day=?,placement_day=?,enabled=?,version=version+1 WHERE id=?",
       )
       .run(b.ready_day, b.placement_day, b.enabled ? 1 : 0, id);
-    this.db.prepare("DELETE FROM meta WHERE key='recurring_last_sync'").run();
+    this.invalidateRecurring();
     const after = this.recurringRules().find((r) => r.id === id);
     this.audit(actor, "RECURRENCE", null, { before: rule, after });
     return after;
@@ -364,7 +371,11 @@ export class Store {
       this.db
         .prepare("SELECT value FROM meta WHERE key='recurring_last_sync'")
         .get()?.value;
-    if (last() >= day) return 0;
+    const changed = () =>
+      !!this.db
+        .prepare("SELECT value FROM meta WHERE key='recurring_rules_changed'")
+        .get();
+    if (last() >= day && !changed()) return 0;
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const from = last() || day;
@@ -417,6 +428,9 @@ export class Store {
           "INSERT INTO meta VALUES('recurring_last_sync',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         )
         .run(day);
+      this.db
+        .prepare("DELETE FROM meta WHERE key='recurring_rules_changed'")
+        .run();
       this.db.exec("COMMIT");
       return created;
     } catch (error) {
@@ -701,7 +715,7 @@ export class Store {
       before: old,
       after: { id: nextId, ...b, name },
     });
-    this.db.prepare("DELETE FROM meta WHERE key='recurring_last_sync'").run();
+    this.invalidateRecurring();
     return { id: nextId };
   }
   state(actor) {

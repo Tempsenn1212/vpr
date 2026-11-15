@@ -552,7 +552,7 @@ main {
 }
 .stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 18px;
   margin-bottom: 24px;
 }
@@ -577,6 +577,24 @@ main {
   color: var(--on-gold);
   border-color: #dcb362;
 }
+.stat-ready {
+  background:
+    url("./assets/signal-waves.svg") right bottom / 500px 180px no-repeat,
+    linear-gradient(125deg, #075b4d, #003f38);
+  border: 2px solid #d7ad60;
+  box-shadow: 0 7px 22px #075b4d20;
+}
+.stat-ready .stat-label,
+.stat-ready small {
+  color: #fff1d0;
+}
+.stat-ready .stat-label {
+  font-weight: 750;
+}
+.stat-ready .stat-icon {
+  background: var(--gold);
+  color: var(--forest-deep);
+}
 .stat:hover {
   box-shadow: 0 6px 18px #003f3826;
 }
@@ -600,6 +618,27 @@ main {
   background: var(--forest);
   color: #fff;
   border-color: #bd954a;
+}
+.dashboard-tabs .tab-ready {
+  border: 2px solid #bd954a;
+  color: var(--primary);
+  font-weight: 750;
+}
+.dashboard-tabs .tab-ready.active {
+  color: #fff;
+}
+.dashboard-tabs .tab-ready b {
+  background: var(--gold);
+  color: var(--forest-deep);
+}
+.ready-filter-note {
+  color: var(--text);
+  background: var(--green-panel);
+  border-left: 3px solid #bd954a;
+  padding: 14px 17px;
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1.7;
 }
 .dashboard-tabs b {
   color: var(--primary);
@@ -1035,6 +1074,23 @@ main {
   align-items: center;
   gap: 7px;
 }
+.category-counts .category-ready-count {
+  background: #ffffff20;
+  border: 1px solid #f4c47470;
+  border-radius: 6px;
+  padding: 4px 6px;
+  color: #fff1d0;
+  font-weight: 750;
+}
+.category-theme-1 .category-ready-count {
+  background: #ffffff65;
+  border-color: #92702d65;
+  color: #173c31;
+}
+.category-ready-count svg {
+  width: 13px;
+  height: 13px;
+}
 .document-list {
   background: var(--surface);
   border: 1px solid var(--heading-line);
@@ -1050,6 +1106,18 @@ main {
 }
 .document-row + .document-row {
   border-top: 1px solid var(--line);
+}
+.document-row.document-ready {
+  border-left: 3px solid #bc934e;
+  background: linear-gradient(100deg, var(--pale), var(--surface) 70%);
+}
+.documents-table .document-ready td:first-child {
+  box-shadow: inset 3px 0 #bc934e;
+}
+.doc-main small.ready-date,
+.documents-table small.ready-date {
+  color: var(--green);
+  font-weight: 750;
 }
 .doc-link {
   width: 100%;
@@ -1113,6 +1181,16 @@ main {
   max-width: 43%;
   justify-content: flex-end;
 }
+.doc-status-label {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+.status-hint {
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.6;
+}
 .badge {
   font-size: 9px;
   display: inline-flex;
@@ -1127,8 +1205,54 @@ main {
   text-align: left;
 }
 .badge.ready {
-  background: #e5efe7;
-  color: #3e6c50;
+  background: #075b4d;
+  color: #fff;
+  border: 1px solid #c49b4c;
+  box-shadow: 0 2px 7px #003f3814;
+  font-size: 11px;
+  font-weight: 750;
+  padding: 8px 10px;
+}
+.badge.ready svg {
+  color: #f4c474;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+.readiness-note {
+  display: flex;
+  gap: 14px;
+  padding: 20px;
+  margin: 20px 0;
+  border: 1px solid #bc934e;
+  border-left: 4px solid #f4c474;
+  border-radius: 12px;
+  background:
+    url("./assets/signal-waves.svg") right center / 420px 150px no-repeat,
+    linear-gradient(120deg, #075b4d, #003f38);
+  color: #fff;
+}
+.readiness-note > svg {
+  color: #f4c474;
+  flex-shrink: 0;
+}
+.readiness-note > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.readiness-note b {
+  font-size: 17px;
+}
+.readiness-note span {
+  color: #e3eddf;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.button.ready-action {
+  border: 2px solid #b68b3c;
+  font-weight: 800;
+  box-shadow: 0 4px 14px #b68b3c2b;
 }
 .badge.placed {
   background: #fff5e5;
@@ -1489,6 +1613,27 @@ pre {
 .status-summary > div:nth-child(even) span {
   color: #405636;
 }
+.status-summary > .summary-ready {
+  background:
+    url("./assets/signal-waves.svg") center / 400px 160px no-repeat,
+    #075b4d;
+  color: #fff;
+  border: 2px solid #bd954a;
+}
+.status-summary > .summary-ready span {
+  color: #fff1d0;
+  font-weight: 750;
+}
+.audit-ready > div > b {
+  color: var(--primary);
+  background: var(--pale);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+.audit-ready .timeline-dot {
+  background: var(--primary);
+  box-shadow: 0 0 0 3px #d7ad6055;
+}
 .status-summary b {
   font-size: 23px;
 }
@@ -1774,8 +1919,8 @@ pre {
   color: #b7c9bb;
 }
 [data-theme="dark"] .badge.ready {
-  background: #294835;
-  color: #bdd8b6;
+  background: #075b4d;
+  color: #fff;
 }
 [data-theme="dark"] .badge.placed {
   background: #423724;
@@ -1868,6 +2013,7 @@ pre {
     gap: 12px;
   }
   .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 13px;
   }
   .page-heading {
@@ -1887,7 +2033,7 @@ pre {
 @media (max-width: 760px) {
   .dashboard-tabs {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
   }
   .dashboard-tabs button {

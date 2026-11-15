@@ -1,6 +1,6 @@
 export const STATUS = {
   IN_PROGRESS: "В работе",
-  READY: "Оформлен, ожидает вложения в журнал",
+  READY: "Документ оформлен",
   PLACED: "Вложен в журнал",
   CONFIRMED: "Вложение подтверждено",
   NEEDS_CORRECTION: "Требует исправления",

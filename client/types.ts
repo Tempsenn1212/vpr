@@ -94,19 +94,21 @@ export type RecurringRule = {
 };
 export const statuses: Record<string, string> = {
   IN_PROGRESS: "В работе",
-  READY: "Оформлен, ожидает вложения в журнал",
+  READY: "Документ оформлен",
   PLACED: "Вложен в журнал",
   CONFIRMED: "Вложение подтверждено",
   NEEDS_CORRECTION: "Требует исправления",
 };
 export const isSubmission = (doc: { categoryId?: string }) =>
   doc.categoryId === "category-12";
+export const isReady = (doc: { status: string }) => doc.status === "READY";
+export const readyHint = (doc: { categoryId?: string }) =>
+  isSubmission(doc) ? "Ожидает сдачи" : "Ожидает вложения в журнал";
 export function statusText(status: string, doc?: { categoryId?: string }) {
   if (doc && isSubmission(doc)) {
     return (
       (
         {
-          READY: "Оформлен, ожидает сдачи",
           PLACED: "Сдан",
           CONFIRMED: "Сдача подтверждена",
         } as Record<string, string>

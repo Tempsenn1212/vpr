@@ -178,10 +178,18 @@ test("summary cards open the correct table, filters match state and manual recor
     version: d.version,
     date: "2026-11-15",
   });
+  const ready = state.documents.find(
+    (d) => d.recurring?.ruleId === "weekly-summary",
+  );
+  await mutate(page, app, `/documents/${ready.id}/actions/ready`, {
+    version: ready.version,
+    date: "2026-11-13",
+  });
   const docs = (await (await page.request.get(app.url + "/api/state")).json())
     .documents;
   for (const [label, key, count] of [
     ["Всего документов", "all", docs.length],
+    ["Документ оформлен", "ready", 1],
     ["Просрочено без вложения", "overdue", 2],
     ["Завершено", "completed", 1],
   ]) {
@@ -223,6 +231,199 @@ test("summary cards open the correct table, filters match state and manual recor
     ),
   ).toBe(false);
 });
+for (const [categoryId, categoryName, submission] of [
+  ["category-2", "Планы основных культурно-досуговых мероприятий", false],
+  ["category-12", "Рапорт ГДП", true],
+]) {
+  test(`readiness is prominent and counted independently through the ${submission ? "GDP submission" : "journal placement"} lifecycle`, async ({
+    page,
+    recurringApp: app,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await login(page, app);
+    const title = "Проверка статуса оформления";
+    const create = (name) =>
+      mutate(page, app, "/documents", {
+        title: name,
+        categoryId,
+        readyDueDate: "2026-11-13",
+        dueDate: "2026-11-14",
+      });
+    let doc = await create(title);
+    let completed = await create("Уже завершённый документ");
+    completed = await mutate(
+      page,
+      app,
+      `/documents/${completed.id}/actions/ready`,
+      { version: completed.version, date: "2026-11-13" },
+    );
+    await mutate(page, app, `/documents/${completed.id}/actions/place`, {
+      version: completed.version,
+      date: "2026-11-14",
+    });
+    let deleted = await create("Удалённый оформленный документ");
+    deleted = await mutate(
+      page,
+      app,
+      `/documents/${deleted.id}/actions/ready`,
+      { version: deleted.version, date: "2026-11-13" },
+    );
+    await mutate(
+      page,
+      app,
+      `/documents/${deleted.id}`,
+      {
+        version: deleted.version,
+        confirmed: true,
+      },
+      "delete",
+    );
+
+    const home = () =>
+      page
+        .locator("nav")
+        .getByRole("button", { name: "Обзор", exact: true })
+        .click();
+    const readyStat = page.locator(".stat-ready");
+    await expect(readyStat.locator("strong")).toHaveText("0");
+    await page
+      .locator(".category-card")
+      .filter({ hasText: categoryName })
+      .click();
+    const row = page.locator(".document-row").filter({ hasText: title });
+    await row.getByRole("button").click();
+    const dialog = page.getByRole("dialog");
+    const readyButton = dialog.getByRole("button", {
+      name: "Документ оформлен",
+      exact: true,
+    });
+    await expect(readyButton).toHaveClass(/ready-action/);
+    await readyButton.click();
+    await page
+      .getByLabel("Фактическая дата оформления", { exact: true })
+      .fill("2026-11-13");
+    await readyButton.click();
+    await expect(dialog).not.toBeVisible();
+    await expect(row.locator(".badge.ready")).toHaveText("Документ оформлен");
+    const hint = submission ? "Ожидает сдачи" : "Ожидает вложения в журнал";
+    await expect(row.locator(".status-hint")).toHaveText(hint);
+    await expect(row.locator(".ready-date")).toContainText("13 нояб. 2026");
+    await expect(row.locator(".deadline.overdue")).toBeVisible();
+    await row.getByRole("button").click();
+    await expect(dialog.locator(".readiness-note")).toContainText(
+      "Документ оформлен",
+    );
+    await expect(dialog.locator(".readiness-note")).toContainText(hint);
+    await expect(dialog.locator(".readiness-note")).toContainText(
+      "13 нояб. 2026",
+    );
+    await expect(dialog.locator(".audit-ready")).toContainText(
+      "Дата оформления: — → 2026-11-13",
+    );
+    await page
+      .getByRole("button", { name: "Закрыть окно", exact: true })
+      .click();
+
+    await home();
+    await expect(readyStat.locator("strong")).toHaveText("1");
+    await expect(
+      page
+        .locator(".category-card")
+        .filter({ hasText: categoryName })
+        .locator(".category-ready-count"),
+    ).toHaveText("Оформлено: 1");
+    await readyStat.click();
+    const readyTab = page.locator(".dashboard-tabs .tab-ready");
+    await expect(readyTab).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("tbody tr")).toHaveCount(1);
+    await expect(page.locator("tbody .badge.ready")).toHaveText(
+      "Документ оформлен",
+    );
+    await expect(page.locator("tbody .status-hint")).toHaveText(hint);
+    await expect(page.locator("tbody .ready-date")).toContainText(
+      "13 нояб. 2026",
+    );
+    await expect(page.locator("tbody .deadline.overdue")).toBeVisible();
+    await page
+      .getByRole("combobox", { name: "Категория в таблице", exact: true })
+      .click();
+    await page.getByRole("option", { name: categoryName }).click();
+    await page.getByLabel("Поиск документов в таблице").fill("НЕ НАЙДЕНО");
+    await expect(page.locator("tbody tr")).toHaveCount(0);
+    await page
+      .getByLabel("Поиск документов в таблице")
+      .fill("Проверка статуса");
+    await expect(page.locator("tbody tr")).toHaveCount(1);
+    await page.locator(".dashboard-tabs .tab-overdue").click();
+    await expect(page.locator("tbody tr")).toHaveCount(1);
+    await expect(page.locator("tbody .badge.ready")).toHaveText(
+      "Документ оформлен",
+    );
+    await page
+      .locator("nav")
+      .getByRole("button", { name: "Проверки", exact: true })
+      .click();
+    await expect(page.locator(".summary-ready b")).toHaveText("1");
+    await expect(page.locator(".summary-ready span")).toHaveText(
+      "Документ оформлен",
+    );
+
+    await home();
+    await page
+      .locator(".category-card")
+      .filter({ hasText: categoryName })
+      .click();
+    await page
+      .getByRole("combobox", { name: "Статус", exact: true })
+      .selectOption("READY");
+    await expect(page.locator(".document-row")).toHaveCount(1);
+    await row.getByRole("button").click();
+    const delivery = submission ? "Сдан" : "Вложен в журнал";
+    await dialog.getByRole("button", { name: delivery, exact: true }).click();
+    await page
+      .getByLabel(
+        submission ? "Фактическая дата сдачи" : "Фактическая дата вложения",
+        { exact: true },
+      )
+      .fill("2026-11-14");
+    await dialog.getByRole("button", { name: delivery, exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    await expect(page.locator(".document-row")).toHaveCount(0);
+    await home();
+    await expect(readyStat.locator("strong")).toHaveText("0");
+    await readyStat.click();
+    await expect(page.locator("tbody tr")).toHaveCount(0);
+
+    const current = async () =>
+      (
+        await (await page.request.get(app.url + "/api/state")).json()
+      ).documents.find((d) => d.id === doc.id);
+    doc = await current();
+    doc = await mutate(page, app, `/documents/${doc.id}/actions/return`, {
+      version: doc.version,
+      reason: "Уточнение документа",
+      confirmed: true,
+    });
+    doc = await mutate(page, app, `/documents/${doc.id}/actions/ready`, {
+      version: doc.version,
+      date: "2026-11-13",
+    });
+    await expect(page.locator("tbody tr")).toHaveCount(1);
+    doc = await mutate(page, app, `/documents/${doc.id}/actions/return`, {
+      version: doc.version,
+      reason: "Повторное уточнение",
+      confirmed: true,
+    });
+    await expect(page.locator("tbody tr")).toHaveCount(0);
+    await home();
+    await expect(readyStat.locator("strong")).toHaveText("0");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > innerWidth,
+      ),
+    ).toBe(false);
+  });
+}
 test("monthly conversation group stays one card, edits names and requires forty real readiness marks before placement", async ({
   page,
   recurringApp: app,

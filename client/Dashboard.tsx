@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import { Search } from "lucide-react";
-import { fmt, statusText, type Doc, type State } from "./types";
+import { fmt, isReady, readyHint, stamp, type Doc, type State } from "./types";
 import { CategorySelect } from "./CategorySelect";
-export type DashboardFilter = "all" | "overdue" | "completed";
+import { DocumentStatus } from "./DocumentStatus";
+export type DashboardFilter = "all" | "ready" | "overdue" | "completed";
 export function Dashboard({
   s,
   filter,
@@ -22,7 +23,11 @@ export function Dashboard({
   const all = s.documents.filter((d) => !d.deleted);
   const matches = (d: Doc, f: DashboardFilter) =>
     f === "all" ||
-    (f === "completed" ? d.completed : d.deadline.kind === "overdue");
+    (f === "ready"
+      ? isReady(d)
+      : f === "completed"
+        ? d.completed
+        : d.deadline.kind === "overdue");
   const docs = all
     .filter(
       (d) =>
@@ -44,6 +49,7 @@ export function Dashboard({
     );
   const tabs: [DashboardFilter, string][] = [
     ["all", "Всего документов"],
+    ["ready", "Документ оформлен"],
     [
       "overdue",
       category === "category-12"
@@ -71,7 +77,7 @@ export function Dashboard({
         {tabs.map(([id, label]) => (
           <button
             key={id}
-            className={filter === id ? "active" : ""}
+            className={`tab-${id}${filter === id ? " active" : ""}`}
             aria-pressed={filter === id}
             onClick={() => setFilter(id)}
           >
@@ -80,6 +86,12 @@ export function Dashboard({
           </button>
         ))}
       </div>
+      {filter === "ready" && (
+        <p className="ready-filter-note">
+          Документы оформлены и ожидают вложения в журнал или сдачи. Срок
+          предоставления учитывается отдельно.
+        </p>
+      )}
       <div className="filters">
         <div className="search">
           <Search size={18} />
@@ -138,7 +150,7 @@ export function Dashboard({
           </thead>
           <tbody>
             {docs.map((d) => (
-              <tr key={d.id}>
+              <tr key={d.id} className={isReady(d) ? "document-ready" : ""}>
                 <td>
                   <button className="table-title" onClick={() => open(d)}>
                     {d.title}
@@ -162,6 +174,15 @@ export function Dashboard({
                       {d.readyDeadline.label}
                     </small>
                   )}
+                  {d.ready &&
+                    !["IN_PROGRESS", "NEEDS_CORRECTION"].includes(d.status) && (
+                      <small className="ready-date">
+                        Оформлен:{" "}
+                        {d.ready.date
+                          ? fmt(d.ready.date)
+                          : stamp(d.ready.at, s.timeZone)}
+                      </small>
+                    )}
                 </td>
                 <td>
                   <b>{fmt(d.dueDate)}</b>
@@ -170,10 +191,10 @@ export function Dashboard({
                   </small>
                 </td>
                 <td>
-                  <span className={"badge " + d.status.toLowerCase()}>
-                    <span className="dot" />
-                    {statusText(d.status, d)}
-                  </span>
+                  <DocumentStatus status={d.status} doc={d} />
+                  {isReady(d) && (
+                    <small className="status-hint">{readyHint(d)}</small>
+                  )}
                 </td>
                 <td>{d.placement ? fmt(d.placement.date!) : "—"}</td>
               </tr>

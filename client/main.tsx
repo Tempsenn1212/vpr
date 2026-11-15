@@ -36,11 +36,14 @@ import {
   isSubmission,
   statusText,
   eventText,
+  isReady,
+  readyHint,
 } from "./types";
 import { api, ApiError, setSessionToken } from "./api";
 import { Dashboard, type DashboardFilter } from "./Dashboard";
 import { RecurringPanel, Subdocuments, ruleDescription } from "./Recurring";
 import { CategorySelect } from "./CategorySelect";
+import { DocumentStatus as Badge } from "./DocumentStatus";
 import "./style.css";
 declare global {
   interface Window {
@@ -60,20 +63,6 @@ function UnitLogo() {
       height={56}
       decoding="async"
     />
-  );
-}
-function Badge({
-  status,
-  doc,
-}: {
-  status: string;
-  doc?: { categoryId?: string };
-}) {
-  return (
-    <span className={"badge " + status.toLowerCase()}>
-      <span className="dot" />
-      {statusText(status, doc)}
-    </span>
   );
 }
 function App() {
@@ -327,6 +316,7 @@ function App() {
         .includes(categoryQuery.trim().toLocaleLowerCase("ru")),
     ),
     overdue = docs.filter((d) => d.deadline.kind === "overdue"),
+    ready = docs.filter(isReady),
     completed = docs.filter((d) => d.completed),
     attention = docs.filter(
       (d) =>
@@ -502,6 +492,17 @@ function App() {
                   foot="Во всех категориях"
                 />
                 <Stat
+                  icon={<ClipboardCheck />}
+                  label="Документ оформлен"
+                  onClick={() => {
+                    setDashboardFilter("ready");
+                    navigate("dashboard");
+                  }}
+                  value={ready.length}
+                  foot="Ожидают вложения или сдачи"
+                  kind="ready"
+                />
+                <Stat
                   icon={<AlertCircle />}
                   label="Просрочено без вложения"
                   onClick={() => {
@@ -592,6 +593,10 @@ function App() {
                       <h3>{c.name}</h3>
                       <p>Документов: {list.length}</p>
                       <div className="category-counts">
+                        <span className="category-ready-count">
+                          <Check size={13} aria-hidden="true" />
+                          Оформлено: {list.filter(isReady).length}
+                        </span>
                         <span>
                           <i className="dot red" />
                           Просрочено:{" "}
@@ -869,7 +874,10 @@ function DocumentList({
     <div className="document-list">
       {!docs.length && <Empty />}
       {docs.map((d) => (
-        <div className="document-row" key={d.id}>
+        <div
+          className={"document-row" + (isReady(d) ? " document-ready" : "")}
+          key={d.id}
+        >
           {select && (
             <input
               aria-label={"Выбрать " + d.title}
@@ -897,6 +905,15 @@ function DocumentList({
               {d.readyDueDate && (
                 <small>Оформить до {fmt(d.readyDueDate)}</small>
               )}
+              {d.ready &&
+                !["IN_PROGRESS", "NEEDS_CORRECTION"].includes(d.status) && (
+                  <small className="ready-date">
+                    Оформлен:{" "}
+                    {d.ready.date
+                      ? fmt(d.ready.date)
+                      : stamp(d.ready.at, s.timeZone)}
+                  </small>
+                )}
               <small>
                 {s.categories.find((c) => c.id === d.categoryId)?.name} · Срок{" "}
                 {fmt(d.dueDate)}
@@ -906,7 +923,12 @@ function DocumentList({
               </span>
             </span>
             <span className="doc-status">
-              <Badge status={d.status} doc={d} />
+              <span className="doc-status-label">
+                <Badge status={d.status} doc={d} />
+                {isReady(d) && (
+                  <small className="status-hint">{readyHint(d)}</small>
+                )}
+              </span>
               <ChevronRight size={17} />
             </span>
           </button>
@@ -1210,6 +1232,25 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
         <div className="warning">Карточка удалена · только просмотр</div>
       )}
       <Badge status={d.status} doc={d} />
+      {isReady(d) && (
+        <div className="readiness-note">
+          <ClipboardCheck size={24} aria-hidden="true" />
+          <div>
+            <b>Документ оформлен</b>
+            {d.ready && (
+              <span>
+                Дата оформления:{" "}
+                {d.ready.date
+                  ? fmt(d.ready.date)
+                  : stamp(d.ready.at, s.timeZone)}
+              </span>
+            )}
+            <span>
+              {readyHint(d)}. Срок предоставления учитывается отдельно.
+            </span>
+          </div>
+        </div>
+      )}
       {d.recurring && (
         <p className="recurring-caption">
           По расписанию · {fmt(d.recurring.start)} — {fmt(d.recurring.end)}
@@ -1269,7 +1310,7 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
           <div className="action-grid">
             {["IN_PROGRESS", "NEEDS_CORRECTION"].includes(d.status) && (
               <button
-                className="button secondary"
+                className="button ready-action"
                 disabled={
                   busy ||
                   (d.items?.length > 0 &&
@@ -1286,7 +1327,7 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
             ) && (
               <>
                 <button
-                  className="button"
+                  className={"button" + (!isReady(d) ? " secondary" : "")}
                   disabled={
                     busy ||
                     (d.items?.length > 0 &&
@@ -1299,7 +1340,7 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
                 </button>
                 {chief && (
                   <button
-                    className="button"
+                    className={"button" + (!isReady(d) ? " secondary" : "")}
                     disabled={
                       busy ||
                       (d.items?.length > 0 &&
@@ -1575,13 +1616,13 @@ function Reviews({ s, busy, open, run, showModal }: any) {
           </div>
           <div className="status-summary">
             {Object.entries(statuses).map(([k, v]) => (
-              <div key={k}>
+              <div key={k} className={k === "READY" ? "summary-ready" : ""}>
                 <b>{list.filter((d) => d.status === k).length}</b>
                 <span>
                   {cat === "ALL"
                     ? (
                         {
-                          READY: "Оформлен",
+                          READY: "Документ оформлен",
                           PLACED: "Завершён",
                           CONFIRMED: "Дополнительно подтверждён",
                         } as Record<string, string>
@@ -1681,7 +1722,7 @@ function Reviews({ s, busy, open, run, showModal }: any) {
                   <li key={k}>
                     {(
                       {
-                        READY: "Оформлен",
+                        READY: "Документ оформлен",
                         PLACED: "Завершён",
                         CONFIRMED: "Дополнительно подтверждён",
                       } as Record<string, string>
@@ -1725,7 +1766,12 @@ function AuditList({
           after = e.data.after;
         const d = s.documents.find((d) => d.id === e.document_id);
         return (
-          <div className="audit-event" key={e.id}>
+          <div
+            className={
+              "audit-event" + (e.type === "READY" ? " audit-ready" : "")
+            }
+            key={e.id}
+          >
             <span className="timeline-dot" />
             <div>
               <b>{eventText(e) || e.type}</b>
@@ -1785,6 +1831,12 @@ function AuditList({
                       {isSubmission(after) ? "Дата сдачи" : "Дата вложения"}:{" "}
                       {before.placement?.date || "—"} →{" "}
                       {after.placement?.date || "—"}
+                    </p>
+                  )}
+                  {before.ready?.date !== after.ready?.date && (
+                    <p>
+                      Дата оформления: {before.ready?.date || "—"} →{" "}
+                      {after.ready?.date || "—"}
                     </p>
                   )}
                 </div>

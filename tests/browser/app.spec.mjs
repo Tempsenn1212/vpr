@@ -14,6 +14,36 @@ async function createUI(page, title, dueDate = "2026-11-27") {
   await dialog.getByRole("button", { name: "Сохранить документ" }).click();
   await expect(dialog).not.toBeVisible();
 }
+test("eleven named categories: mobile search, full long names and document creation in a new category", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 844 });
+  await login(page);
+  const cards = page.locator(".category-card");
+  await expect(cards).toHaveCount(11);
+  await expect(page.locator(".category-grid")).not.toContainText("Иконка №");
+  await page.getByLabel("Поиск категорий", { exact: true }).fill("БОЕВЫЕ");
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toContainText("Боевые листки");
+  await expect(cards.first().locator(".category-number")).toHaveText("11");
+  await cards.first().click();
+  const title = "Боевой листок " + Date.now();
+  await createUI(page, title);
+  const state = await (await page.request.get("/api/state")).json();
+  expect(state.documents.find((d) => d.title === title).categoryId).toBe("category-11");
+  await page.locator("nav").getByRole("button", { name: "Обзор", exact: true }).click();
+  await page.getByRole("button", { name: "Очистить поиск категорий" }).click();
+  await expect(cards).toHaveCount(11);
+  await page.getByLabel("Поиск категорий", { exact: true }).fill("социально-психологический");
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first().getByRole("heading")).toHaveText("Социально-психологический портрет роты");
+  await page.getByLabel("Поиск категорий", { exact: true }).fill("единых дней информирования");
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toContainText("документы по организации и проведению военно-политической подготовки");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  await page.getByLabel("Поиск категорий", { exact: true }).fill("НЕСУЩЕСТВУЮЩАЯ_КАТЕГОРИЯ");
+  await expect(cards).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: /Категории не найдены/ })).toBeVisible();
+});
+
 test("two clients: create appears within 5 seconds, worker cannot confirm, marks share authors", async ({
   browser,
 }) => {
@@ -23,8 +53,8 @@ test("two clients: create appears within 5 seconds, worker cannot confirm, marks
     p2 = await b.newPage();
   await login(p1);
   await login(p2, "Иван Петров");
-  await p1.locator(".category-card").filter({ hasText: "Иконка №1" }).click();
-  await p2.locator(".category-card").filter({ hasText: "Иконка №1" }).click();
+  await p1.locator(".category-card").filter({ hasText: "Планы военно-политической работы" }).click();
+  await p2.locator(".category-card").filter({ hasText: "Планы военно-политической работы" }).click();
   const title = "Документ двух клиентов " + Date.now();
   await createUI(p1, title);
   await expect(p2.getByRole("button", { name: new RegExp(title) })).toBeVisible(
@@ -61,7 +91,7 @@ test("mobile: long title, form validation, placement, copy, soft deletion and da
   });
   const page = await context.newPage();
   await login(page);
-  await page.locator(".category-card").filter({ hasText: "Иконка №2" }).click();
+  await page.locator(".category-card").filter({ hasText: "Планы основных культурно-досуговых мероприятий" }).click();
   await page.getByRole("button", { name: "Создать документ" }).click();
   await page
     .getByRole("dialog")
@@ -189,7 +219,7 @@ test("network failure is visible and never reports false success; reconnect load
   page,
 }) => {
   await login(page);
-  await page.locator(".category-card").filter({ hasText: "Иконка №3" }).click();
+  await page.locator(".category-card").filter({ hasText: "Журнал учета грубых дисциплинарных проступков" }).click();
   await page.getByRole("button", { name: "Создать документ" }).click();
   await page
     .getByLabel("Название", { exact: true })
@@ -218,7 +248,7 @@ test("empty results and light layout at 360px have no horizontal scroll", async 
   });
   const p = await ctx.newPage();
   await login(p);
-  await p.locator(".category-card").filter({ hasText: "Иконка №1" }).click();
+  await p.locator(".category-card").filter({ hasText: "Планы военно-политической работы" }).click();
   await p.getByPlaceholder("Поиск по названию").fill("НИЧЕГО_НЕ_НАЙДЕНО");
   await expect(
     p.getByRole("heading", { name: "Документов пока нет" }),
@@ -239,8 +269,8 @@ test("stale form keeps draft and offers current server data instead of overwriti
     p2 = await b.newPage();
   await login(p1);
   await login(p2, "Иван Петров");
-  await p1.locator(".category-card").filter({ hasText: "Иконка №1" }).click();
-  await p2.locator(".category-card").filter({ hasText: "Иконка №1" }).click();
+  await p1.locator(".category-card").filter({ hasText: "Планы военно-политической работы" }).click();
+  await p2.locator(".category-card").filter({ hasText: "Планы военно-политической работы" }).click();
   const title = "Конфликт " + Date.now();
   await createUI(p1, title);
   await expect(p2.getByRole("button", { name: new RegExp(title) })).toBeVisible(
@@ -286,7 +316,7 @@ test("worker completes a document without review; home and old-period backlog ex
   const suffix = Date.now();
   const doneTitle = "Завершён без проверки " + suffix;
   const pendingTitle = "Не вложен в журнал " + suffix;
-  await page.locator(".category-card").filter({ hasText: "Иконка №1" }).click();
+  await page.locator(".category-card").filter({ hasText: "Планы военно-политической работы" }).click();
   await createUI(page, doneTitle, "2020-01-01");
   await page.getByRole("button", { name: new RegExp(doneTitle) }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Вложен в журнал", exact: true }).click();

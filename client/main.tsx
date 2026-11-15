@@ -64,6 +64,7 @@ function App() {
     [denied, setDenied] = useState(""),
     [view, setView] = useState("home"),
     [category, setCategory] = useState(""),
+    [categoryQuery, setCategoryQuery] = useState(""),
     [modal, setModal] = useState<any>(null),
     [notice, setNotice] = useState(""),
     [error, setError] = useState(""),
@@ -301,6 +302,11 @@ function App() {
     chief = me.role === "CHIEF",
     docs = s.documents.filter((d) => !d.deleted),
     visibleCats = s.categories.filter((c) => !c.hidden),
+    matchingCats = visibleCats.filter((c) =>
+      c.name
+        .toLocaleLowerCase("ru")
+        .includes(categoryQuery.trim().toLocaleLowerCase("ru")),
+    ),
     overdue = docs.filter((d) => d.deadline.kind === "overdue"),
     completed = docs.filter((d) => d.completed),
     attention = docs.filter(
@@ -505,10 +511,33 @@ function App() {
               )}
               <div className="section-title">
                 <h2>Категории документов</h2>
-                <span>{visibleCats.length} категории</span>
+                <span>
+                  {categoryQuery.trim()
+                    ? `Показано: ${matchingCats.length} из ${visibleCats.length}`
+                    : `Категорий: ${visibleCats.length}`}
+                </span>
+              </div>
+              <div className="search category-search">
+                <Search size={18} />
+                <input
+                  aria-label="Поиск категорий"
+                  placeholder="Найти категорию"
+                  value={categoryQuery}
+                  onChange={(e) => setCategoryQuery(e.target.value)}
+                />
+                {categoryQuery && (
+                  <button
+                    type="button"
+                    aria-label="Очистить поиск категорий"
+                    onClick={() => setCategoryQuery("")}
+                  >
+                    <X size={16} />
+                  </button>
+                )}
               </div>
               <section className="category-grid">
-                {visibleCats.map((c, i) => {
+                {matchingCats.map((c) => {
+                  const i = visibleCats.indexOf(c);
                   const list = docs.filter((d) => d.categoryId === c.id);
                   return (
                     <button
@@ -518,27 +547,26 @@ function App() {
                     >
                       <div className="category-top">
                         <span className={"folder-icon tone-" + (i % 3)}>
-                          <Folder size={27} />
+                          <Folder size={20} />
                         </span>
-                        <ArrowUpRight size={20} />
+                        <span className="category-number" aria-hidden="true">
+                          {i + 1}
+                        </span>
                       </div>
                       <h3>{c.name}</h3>
-                      <p>{list.length} активных документов</p>
+                      <p>Документов: {list.length}</p>
                       <div className="category-counts">
                         <span>
                           <i className="dot red" />
+                          Просрочено:{" "}
                           {
                             list.filter((d) => d.deadline.kind === "overdue")
                               .length
-                          }{" "}
-                          просрочено без вложения
+                          }
                         </span>
                         <span>
                           <i className="dot amber" />
-                          {
-                            list.filter((d) => d.completed).length
-                          }{" "}
-                          завершено
+                          Завершено: {list.filter((d) => d.completed).length}
                         </span>
                       </div>
                     </button>
@@ -547,6 +575,9 @@ function App() {
               </section>
               {!visibleCats.length && (
                 <Empty text="Нет видимых категорий. Администратор может добавить категорию." />
+              )}
+              {visibleCats.length > 0 && matchingCats.length === 0 && (
+                <Empty text="Категории не найдены. Измените поисковый запрос." />
               )}
               <div className="section-title">
                 <h2>Требуют внимания</h2>
@@ -1920,7 +1951,7 @@ function SettingsView({ s, run, busy, setError }: any) {
                   Название категории
                   <input
                     required
-                    maxLength={100}
+                    maxLength={300}
                     value={catDraft.name}
                     onChange={(e) =>
                       setCat({ ...catDraft, name: e.target.value })

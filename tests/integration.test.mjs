@@ -731,6 +731,18 @@ test("stored PLACED documents become complete after restart without rewriting da
     instance.db.close();
   }
 });
+test("category names support full long titles through 300 characters", async (t) => {
+  const f = await fixture(t);
+  const category = f.store.categories().find((c) => c.id === "category-6");
+  assert(category.name.length > 100);
+  const saved = await f.worker.request("/categories/category-6", {
+    name: category.name, position: 6, hidden: false,
+  }, "PATCH");
+  assert.equal(saved.status, 200);
+  assert.equal(f.store.categories().find((c) => c.id === category.id).name, category.name);
+  assert.equal((await f.worker.request("/categories", { name: "Я".repeat(300), position: 12 })).status, 200);
+  assert.equal((await f.worker.request("/categories", { name: "Я".repeat(301), position: 13 })).status, 400);
+});
 test("transaction rolls back mutation AND audit on a failing request", async (t) => {
   const f = await fixture(t);
   const actor = f.store.user("worker-1");

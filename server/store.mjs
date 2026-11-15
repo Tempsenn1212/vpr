@@ -469,7 +469,7 @@ export class Store {
   }
   saveCategory(actor, id, b) {
     this.admin(actor);
-    const name = text(b.name, "Название категории", 100);
+    const name = text(b.name, "Название категории", 300);
     demand(
       Number.isInteger(b.position) && b.position >= 0 && b.position <= 10000,
       "Порядок: целое число 0–10000",

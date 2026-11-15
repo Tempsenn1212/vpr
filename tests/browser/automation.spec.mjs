@@ -655,18 +655,42 @@ test("monthly conversation group stays one card, edits names and requires forty 
   await expect(rows.first()).toContainText("Рядовой Тестовый");
   await rows.first().getByRole("checkbox").check();
   await expect(page.getByRole("progressbar")).toHaveAttribute("value", "1");
-  let doc = (
+  const doc = (
     await (await page.request.get(app.url + "/api/state")).json()
   ).documents.find((d) => d.categoryId === "category-9");
-  for (const item of doc.items.slice(1))
-    doc = await mutate(
-      page,
-      app,
-      `/documents/${doc.id}/items/${item.id}`,
-      { version: doc.version, done: true },
-      "patch",
-    );
+  const markAll = page.getByRole("button", {
+    name: "Отметить все 40 листов",
+    exact: true,
+  });
+  await expect(markAll).toBeEnabled();
+  await page.route(
+    "**/api/documents/*/items/complete",
+    (route) => route.abort("failed"),
+    { times: 1 },
+  );
+  await markAll.click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Нет связи с сервером",
+  );
+  await expect(page.getByRole("progressbar")).toHaveAttribute("value", "1");
+  await expect(markAll).toBeEnabled();
+  await markAll.click();
   await expect(page.getByRole("progressbar")).toHaveAttribute("value", "40");
+  await expect(rows.locator('input[type="checkbox"]:checked')).toHaveCount(40);
+  await expect(markAll).toBeDisabled();
+  const marked = (
+    await (await page.request.get(app.url + "/api/state")).json()
+  ).documents.find((d) => d.id === doc.id);
+  expect(marked.items.every((item) => !!item.ready)).toBe(true);
+  expect(marked.items[0]).toEqual(doc.items[0]);
+  expect(marked.status).toBe("READY");
+  expect(marked.completed).toBe(false);
+  expect(marked.placement).toBeNull();
+  await expect(
+    page
+      .locator(".audit-event")
+      .filter({ hasText: "Все листы беседы отмечены" }),
+  ).toBeVisible();
   await page
     .getByRole("button", { name: "Вложен в журнал", exact: true })
     .click();
@@ -683,6 +707,7 @@ test("monthly conversation group stays one card, edits names and requires forty 
     "Документ завершён",
   );
   await expect(rows.first().getByRole("checkbox")).toBeDisabled();
+  await expect(markAll).toHaveCount(0);
   const state = await (await page.request.get(app.url + "/api/state")).json();
   expect(
     state.documents.filter((d) => d.categoryId === "category-9"),

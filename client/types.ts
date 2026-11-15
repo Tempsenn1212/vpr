@@ -177,6 +177,7 @@ export const events: Record<string, string> = {
   TRANSFER_ADMIN: "Администрирование передано",
   CATEGORY: "Категория изменена",
   SUBDOCUMENT: "Лист беседы изменён",
+  SUBDOCUMENTS: "Все листы беседы отмечены",
   RENAME: "Название приведено к обычному регистру",
   RECURRENCE: "Расписание документов изменено",
 };

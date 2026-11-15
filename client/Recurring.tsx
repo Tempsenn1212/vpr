@@ -6,6 +6,7 @@ import {
   type State,
 } from "./types";
 import { AppSelect } from "./AppSelect";
+import { CheckCheck } from "lucide-react";
 
 const weekdays = [
   "Понедельник",
@@ -244,6 +245,27 @@ export function Subdocuments({
         max={doc.items.length}
         aria-label="Оформление листов беседы"
       />
+      {!doc.completed && !doc.deleted && (
+        <button
+          type="button"
+          className="button subdocuments-mark-all"
+          disabled={
+            busy || (done === doc.items.length && doc.status === "READY")
+          }
+          onClick={() =>
+            void run(
+              `/documents/${doc.id}/items/complete`,
+              { version: doc.version },
+              "POST",
+              "Все 40 листов беседы отмечены",
+              false,
+            )
+          }
+        >
+          <CheckCheck size={18} />
+          Отметить все 40 листов
+        </button>
+      )}
       {doc.items.map((item) => (
         <ItemRow key={item.id} item={item} doc={doc} busy={busy} run={run} />
       ))}

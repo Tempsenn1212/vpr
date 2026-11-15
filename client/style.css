@@ -795,6 +795,10 @@ main {
   height: 10px;
   accent-color: var(--primary);
 }
+.subdocuments-mark-all {
+  width: 100%;
+  margin: 14px 0 6px;
+}
 .subdocument-row {
   display: flex;
   flex-wrap: wrap;

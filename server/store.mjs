@@ -311,6 +311,35 @@ export class Store {
     if (JSON.stringify(after) === JSON.stringify(old)) return old;
     return this.commitDocument(old, after, actor, "SUBDOCUMENT", { itemId });
   }
+  completeItems(actor, id, b) {
+    const old = this.document(id);
+    this.check(old, b.version);
+    demand(!isCompleted(old), "Сначала верните месячную группу в работу", 409);
+    demand(
+      old.categoryId === "category-9" && old.items?.length === 40,
+      "Доступно только для группы из 40 листов беседы",
+    );
+    const after = structuredClone(old);
+    const mark = { userId: actor.id, name: actor.name, at: this.now() };
+    const itemIds = [];
+    for (const item of after.items) {
+      if (!item.ready) {
+        item.ready = { ...mark };
+        itemIds.push(item.id);
+      }
+    }
+    if (after.status !== "READY" || !after.ready) {
+      after.status = "READY";
+      after.ready = { ...mark };
+      after.rejection = null;
+    }
+    if (JSON.stringify(after) === JSON.stringify(old)) return old;
+    return this.commitDocument(old, after, actor, "SUBDOCUMENTS", {
+      itemIds,
+      markedCount: itemIds.length,
+      total: after.items.length,
+    });
+  }
   recurringRules() {
     return this.db
       .prepare("SELECT * FROM recurring_rules ORDER BY rowid")

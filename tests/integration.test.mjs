@@ -985,6 +985,158 @@ test("forty nested items require real readiness before journal placement, with a
   assert.equal(reopened.status, 200);
   assert.equal(reopened.data.placement, null);
 });
+test("bulk readiness marks remaining conversation sheets once and preserves existing names and authors", async (t) => {
+  const f = await fixture(t);
+  let d = await f.create({ categoryId: "category-9", title: "Лист беседы" });
+  d = (
+    await f.other.request(
+      `/documents/${d.id}/items/item-1`,
+      { version: d.version, label: "Рядовой Тестовый", done: true },
+      "PATCH",
+    )
+  ).data;
+  const original = structuredClone(d);
+  const path = `/documents/${d.id}/items/complete`,
+    key = randomUUID(),
+    body = { version: d.version };
+  const r = await f.worker.request(path, body, "POST", key);
+  assert.equal(r.status, 200);
+  d = r.data;
+  assert.equal(d.version, original.version + 1);
+  assert.equal(d.status, "READY");
+  assert.equal(d.ready.userId, "worker-1");
+  assert.equal(d.placement, null);
+  assert.deepEqual(d.items[0], original.items[0]);
+  assert.deepEqual(
+    d.items.map((i) => i.label),
+    original.items.map((i) => i.label),
+  );
+  for (const item of d.items.slice(1))
+    assert.deepEqual(item.ready, {
+      userId: "worker-1",
+      name: "Анна Смирнова",
+      at: fixed().toISOString(),
+    });
+  let state = (await f.worker.request("/state")).data;
+  assert.equal(state.documents[0].completed, false);
+  const events = state.audit.filter((e) => e.type === "SUBDOCUMENTS");
+  assert.equal(events.length, 1);
+  assert.equal(events[0].actor_id, "worker-1");
+  assert.deepEqual(events[0].data.before, original);
+  assert.deepEqual(events[0].data.after, d);
+  assert.equal(events[0].data.markedCount, 39);
+  assert.equal(events[0].data.total, 40);
+  assert.deepEqual(
+    events[0].data.itemIds,
+    d.items.slice(1).map((i) => i.id),
+  );
+  assert.deepEqual(await f.worker.request(path, body, "POST", key), r);
+  const noop = await f.other.request(path, { version: d.version });
+  assert.equal(noop.status, 200);
+  assert.deepEqual(noop.data, d);
+  state = (await f.worker.request("/state")).data;
+  assert.equal(state.audit.filter((e) => e.type === "SUBDOCUMENTS").length, 1);
+});
+test("bulk conversation marks reject stale, deleted, completed and unrelated cards; return requires a fresh explicit mark", async (t) => {
+  const f = await fixture(t);
+  let d = await f.create({ categoryId: "category-9" });
+  const originalVersion = d.version;
+  d = (
+    await f.other.request(
+      `/documents/${d.id}/items/item-1`,
+      { version: d.version, label: "Новое имя" },
+      "PATCH",
+    )
+  ).data;
+  const before = structuredClone(d);
+  const path = `/documents/${d.id}/items/complete`;
+  assert.equal(
+    (await f.worker.request(path, { version: originalVersion })).status,
+    409,
+  );
+  assert.deepEqual(f.store.document(d.id), before);
+  assert.equal(
+    (await f.client().request(path, { version: d.version })).status,
+    401,
+  );
+  const plain = await f.create();
+  assert.equal(
+    (
+      await f.worker.request(`/documents/${plain.id}/items/complete`, {
+        version: plain.version,
+      })
+    ).status,
+    400,
+  );
+  const deleted = await f.create({ categoryId: "category-9" });
+  const removed = (
+    await f.worker.request(
+      `/documents/${deleted.id}`,
+      { version: deleted.version, confirmed: true },
+      "DELETE",
+    )
+  ).data;
+  assert.equal(
+    (
+      await f.worker.request(`/documents/${deleted.id}/items/complete`, {
+        version: removed.version,
+      })
+    ).status,
+    409,
+  );
+  d = (await f.worker.request(path, { version: d.version })).data;
+  d = await f.action(f.worker, d, "place", { date: "2026-11-27" });
+  assert.equal(
+    (await f.other.request(path, { version: d.version })).status,
+    409,
+  );
+  d = await f.action(f.worker, d, "return", {
+    confirmed: true,
+    reason: "Пересмотреть группу",
+  });
+  assert.equal(d.status, "IN_PROGRESS");
+  const marks = structuredClone(d.items);
+  const ready = await f.chief.request(path, { version: d.version });
+  assert.equal(ready.status, 200);
+  assert.equal(ready.data.status, "READY");
+  assert.equal(ready.data.ready.userId, "chief-1");
+  assert.deepEqual(ready.data.items, marks);
+  assert.equal(ready.data.placement, null);
+});
+test("bulk readiness rolls back all forty marks and audit on failure, then safely retries the same key", async (t) => {
+  const f = await fixture(t);
+  const d = await f.create({ categoryId: "category-9" });
+  const path = `/documents/${d.id}/items/complete`,
+    key = randomUUID(),
+    body = { version: d.version };
+  const before = f.db.prepare("SELECT * FROM audit_events ORDER BY seq").all();
+  f.db.exec(
+    "CREATE TRIGGER fail_bulk BEFORE INSERT ON audit_events WHEN NEW.type='SUBDOCUMENTS' BEGIN SELECT RAISE(ABORT,'synthetic failure'); END",
+  );
+  assert.equal((await f.worker.request(path, body, "POST", key)).status, 500);
+  assert.deepEqual(f.store.document(d.id), d);
+  assert.deepEqual(
+    f.db.prepare("SELECT * FROM audit_events ORDER BY seq").all(),
+    before,
+  );
+  assert.equal(
+    f.db.prepare("SELECT count(*) AS n FROM request_keys WHERE key=?").get(key)
+      .n,
+    0,
+  );
+  f.db.exec("DROP TRIGGER fail_bulk");
+  const retry = await f.worker.request(path, body, "POST", key);
+  assert.equal(retry.status, 200);
+  assert.equal(retry.data.items.filter((i) => i.ready).length, 40);
+  assert.equal(retry.data.version, d.version + 1);
+  assert.deepEqual(await f.worker.request(path, body, "POST", key), retry);
+  assert.equal(
+    (await f.worker.request("/state")).data.audit.filter(
+      (e) => e.type === "SUBDOCUMENTS",
+    ).length,
+    1,
+  );
+});
 test("readiness deadline is independent from placement; invalid dates and group moves are rejected", async (t) => {
   const f = await fixture(t);
   let d = await f.create({ readyDueDate: "2026-11-25", dueDate: "2026-11-30" });

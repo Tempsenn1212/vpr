@@ -1,5 +1,11 @@
 import React, { useState } from "react";
-import { type Doc, type RecurringRule, type State } from "./types";
+import {
+  readinessTerms,
+  type Doc,
+  type RecurringRule,
+  type State,
+} from "./types";
+import { AppSelect } from "./AppSelect";
 
 const weekdays = [
   "Понедельник",
@@ -25,7 +31,7 @@ export function ruleDescription(rule: RecurringRule) {
     quarterly: "Каждый квартал, последний месяц",
     callup: "В июле и декабре",
   }[rule.cadence];
-  return `${period}. Оформить: ${dayLabel(rule, rule.ready_day)}. ${rule.category_id === "category-12" ? "Сдать" : "Вложить"}: ${dayLabel(rule, rule.placement_day)}.`;
+  return `${period}. ${readinessTerms({ categoryId: rule.category_id }).imperative}: ${dayLabel(rule, rule.ready_day)}. ${rule.category_id === "category-12" ? "Сдать" : "Вложить"}: ${dayLabel(rule, rule.placement_day)}.`;
 }
 function RuleEditor({ rule, busy, run }: any) {
   const [enabled, setEnabled] = useState(!!rule.enabled),
@@ -37,11 +43,10 @@ function RuleEditor({ rule, busy, run }: any) {
       { length: weekly ? (place ? 15 : 7) : 31 },
       (_, i) => (weekly && place ? i : i + 1),
     );
-    return values.map((day) => (
-      <option key={day} value={day}>
-        {dayLabel(rule, day)}
-      </option>
-    ));
+    return values.map((day) => ({
+      id: String(day),
+      name: dayLabel(rule, day),
+    }));
   };
   return (
     <form
@@ -71,24 +76,22 @@ function RuleEditor({ rule, busy, run }: any) {
       </p>
       <div className="form-row">
         <label className="field">
-          Оформить
-          <select
-            aria-label={`Оформление: ${rule.title}`}
-            value={ready}
-            onChange={(e) => setReady(Number(e.target.value))}
-          >
-            {options()}
-          </select>
+          {readinessTerms({ categoryId: rule.category_id }).imperative}
+          <AppSelect
+            label={`${readinessTerms({ categoryId: rule.category_id }).noun}: ${rule.title}`}
+            value={String(ready)}
+            onChange={(value) => setReady(Number(value))}
+            options={options()}
+          />
         </label>
         <label className="field">
           {rule.category_id === "category-12" ? "Сдать" : "Вложить в журнал"}
-          <select
-            aria-label={`${rule.category_id === "category-12" ? "Сдача" : "Вложение"}: ${rule.title}`}
-            value={placement}
-            onChange={(e) => setPlacement(Number(e.target.value))}
-          >
-            {options(true)}
-          </select>
+          <AppSelect
+            label={`${rule.category_id === "category-12" ? "Сдача" : "Вложение"}: ${rule.title}`}
+            value={String(placement)}
+            onChange={(value) => setPlacement(Number(value))}
+            options={options(true)}
+          />
         </label>
       </div>
       <div className="small-actions">

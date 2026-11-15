@@ -231,16 +231,200 @@ test("summary cards open the correct table, filters match state and manual recor
     ),
   ).toBe(false);
 });
+test("branded controls sort records, filter history and periods, and preserve settings drafts", async ({
+  page,
+  recurringApp: app,
+}) => {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page, app);
+  const alpha = await mutate(page, app, "/documents", {
+    title: "Фильтр Альфа",
+    categoryId: "category-2",
+    readyDueDate: "2026-11-13",
+    dueDate: "2026-11-20",
+  });
+  await mutate(page, app, "/documents", {
+    title: "Фильтр Ясень",
+    categoryId: "category-2",
+    readyDueDate: "2026-11-17",
+    dueDate: "2026-11-18",
+  });
+  await mutate(page, app, `/documents/${alpha.id}/actions/ready`, {
+    version: alpha.version,
+    date: "2026-11-13",
+  });
+  const nav = (name) =>
+    page.locator("nav").getByRole("button", { name, exact: true }).click();
+  const pick = async (label, name) => {
+    const combo = page.getByRole("combobox", { name: label, exact: true });
+    await combo.click();
+    await expect(combo).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator(".category-select-popup")).toHaveCSS(
+      "background-color",
+      "rgb(0, 63, 56)",
+    );
+    await expect
+      .poll(async () => {
+        const a = await combo.boundingBox(),
+          b = await page.locator(".category-select-popup").boundingBox();
+        return Math.min(
+          Math.abs(a.y - (b.y + b.height)),
+          Math.abs(b.y - (a.y + a.height)),
+        );
+      })
+      .toBeLessThanOrEqual(7);
+    await page
+      .getByRole("textbox", { name: `Поиск: ${label}`, exact: true })
+      .fill(name);
+    await page.getByRole("option", { name, exact: true }).click();
+    await expect(combo).toHaveAttribute("aria-expanded", "false");
+    await expect(combo).toContainText(name);
+  };
+  await nav("Таблица");
+  await page.getByLabel("Поиск документов в таблице").fill("Фильтр");
+  await expect(page.locator("tbody .table-title")).toHaveText([
+    "Фильтр Ясень",
+    "Фильтр Альфа",
+  ]);
+  await pick("Порядок в таблице", "По сроку оформления");
+  await expect(page.locator("tbody .table-title")).toHaveText([
+    "Фильтр Альфа",
+    "Фильтр Ясень",
+  ]);
+  const order = page.getByRole("combobox", {
+    name: "Порядок в таблице",
+    exact: true,
+  });
+  await order.press("ArrowDown");
+  await page
+    .getByRole("textbox", { name: "Поиск: Порядок в таблице", exact: true })
+    .fill("названию");
+  await page
+    .getByRole("textbox", { name: "Поиск: Порядок в таблице", exact: true })
+    .press("Enter");
+  await expect(order).toContainText("По названию");
+  await expect(order).toBeFocused();
+  await expect(page.locator("select")).toHaveCount(0);
+  await nav("Обзор");
+  await page
+    .locator(".category-card")
+    .filter({ hasText: "Планы основных культурно-досуговых мероприятий" })
+    .click();
+  await pick("Статус", "Документ оформлен");
+  await expect(page.locator(".document-row")).toHaveCount(1);
+  await pick("Срок", "Срок впереди");
+  await expect(page.locator(".document-row")).toHaveCount(1);
+  await expect(page.locator("select")).toHaveCount(0);
+  await nav("История");
+  await pick("Карточка в истории", "Фильтр Альфа");
+  await pick("Участник в истории", "Анна Смирнова");
+  await pick("Тип события", "Документ оформлен");
+  await expect(page.locator(".audit-event")).toHaveCount(1);
+  await expect(page.locator(".audit-event")).toContainText("Фильтр Альфа");
+  const actor = page.getByRole("combobox", {
+    name: "Участник в истории",
+    exact: true,
+  });
+  await actor.click();
+  const search = page.getByRole("textbox", {
+    name: "Поиск: Участник в истории",
+    exact: true,
+  });
+  await search.fill("НЕСУЩЕСТВУЮЩИЙ");
+  await expect(
+    page.getByText("Ничего не найдено", { exact: true }),
+  ).toBeVisible();
+  await search.press("Escape");
+  await expect(actor).toBeFocused();
+  await expect(actor).toContainText("Анна Смирнова");
+  await expect(page.locator("select")).toHaveCount(0);
+  await nav("Проверки");
+  const period = page.getByRole("combobox", { name: "Период", exact: true });
+  await period.click();
+  const periodName = await page.getByRole("option").nth(1).innerText();
+  await page.getByRole("option").nth(1).click();
+  await expect(period).toContainText(periodName);
+  await expect(page.locator(".review-meta")).toContainText("11 дек. 2026");
+  await expect(page.locator("select")).toHaveCount(0);
+  await nav("Управление");
+  const rule = page
+    .locator(".rule-details")
+    .filter({ hasText: "Боевой листок" });
+  await rule.locator("summary").click();
+  await pick("Оформление: Боевой листок", "Пятница");
+  await rule
+    .getByRole("button", {
+      name: "Сохранить расписание документа",
+      exact: true,
+    })
+    .click();
+  await expect
+    .poll(
+      async () =>
+        (
+          await (await page.request.get(app.url + "/api/state")).json()
+        ).recurringRules.find((r) => r.id === "weekly-battle").ready_day,
+    )
+    .toBe(5);
+  await page
+    .locator(".panel")
+    .filter({
+      has: page.getByRole("heading", { name: "Участники и роли", exact: true }),
+    })
+    .getByRole("button", { name: "Добавить", exact: true })
+    .click();
+  await page.getByLabel("Имя", { exact: true }).fill("Синтетический черновик");
+  await pick("Рабочая роль", "Начальник");
+  await expect(page.getByLabel("Имя", { exact: true })).toHaveValue(
+    "Синтетический черновик",
+  );
+  await pick("Новый администратор", "Иван Петров");
+  await expect(
+    page.getByRole("button", {
+      name: "Передать администрирование",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await expect(page.locator("select")).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+  ).toBe(false);
+  expect(errors).toEqual([]);
+});
 for (const [categoryId, categoryName, submission] of [
   ["category-2", "Планы основных культурно-досуговых мероприятий", false],
   ["category-12", "Рапорт ГДП", true],
+  ["category-6", "Материалы единых дней информирования", false],
+  ["category-8", "Журнал доведения статей Уголовного кодекса", false],
 ]) {
-  test(`readiness is prominent and counted independently through the ${submission ? "GDP submission" : "journal placement"} lifecycle`, async ({
+  test(`readiness for ${categoryId} is prominent and counted independently through the ${submission ? "GDP submission" : "journal placement"} lifecycle`, async ({
     page,
     recurringApp: app,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await login(page, app);
+    const readyLabel =
+      categoryId === "category-6"
+        ? "Лекторий проведен"
+        : categoryId === "category-8"
+          ? "Доведена"
+          : "Документ оформлен";
+    const dateLabel =
+      categoryId === "category-6"
+        ? "проведения"
+        : categoryId === "category-8"
+          ? "доведения"
+          : "оформления";
+    const countLabel =
+      categoryId === "category-6"
+        ? "Проведено"
+        : categoryId === "category-8"
+          ? "Доведено"
+          : "Оформлено";
     const title = "Проверка статуса оформления";
     const create = (name) =>
       mutate(page, app, "/documents", {
@@ -294,31 +478,29 @@ for (const [categoryId, categoryName, submission] of [
     await row.getByRole("button").click();
     const dialog = page.getByRole("dialog");
     const readyButton = dialog.getByRole("button", {
-      name: "Документ оформлен",
+      name: readyLabel,
       exact: true,
     });
     await expect(readyButton).toHaveClass(/ready-action/);
     await readyButton.click();
     await page
-      .getByLabel("Фактическая дата оформления", { exact: true })
+      .getByLabel(`Фактическая дата ${dateLabel}`, { exact: true })
       .fill("2026-11-13");
     await readyButton.click();
     await expect(dialog).not.toBeVisible();
-    await expect(row.locator(".badge.ready")).toHaveText("Документ оформлен");
+    await expect(row.locator(".badge.ready")).toHaveText(readyLabel);
     const hint = submission ? "Ожидает сдачи" : "Ожидает вложения в журнал";
     await expect(row.locator(".status-hint")).toHaveText(hint);
     await expect(row.locator(".ready-date")).toContainText("13 нояб. 2026");
     await expect(row.locator(".deadline.overdue")).toBeVisible();
     await row.getByRole("button").click();
-    await expect(dialog.locator(".readiness-note")).toContainText(
-      "Документ оформлен",
-    );
+    await expect(dialog.locator(".readiness-note")).toContainText(readyLabel);
     await expect(dialog.locator(".readiness-note")).toContainText(hint);
     await expect(dialog.locator(".readiness-note")).toContainText(
       "13 нояб. 2026",
     );
     await expect(dialog.locator(".audit-ready")).toContainText(
-      "Дата оформления: — → 2026-11-13",
+      `Дата ${dateLabel}: — → 2026-11-13`,
     );
     await page
       .getByRole("button", { name: "Закрыть окно", exact: true })
@@ -331,14 +513,12 @@ for (const [categoryId, categoryName, submission] of [
         .locator(".category-card")
         .filter({ hasText: categoryName })
         .locator(".category-ready-count"),
-    ).toHaveText("Оформлено: 1");
+    ).toHaveText(`${countLabel}: 1`);
     await readyStat.click();
     const readyTab = page.locator(".dashboard-tabs .tab-ready");
     await expect(readyTab).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("tbody tr")).toHaveCount(1);
-    await expect(page.locator("tbody .badge.ready")).toHaveText(
-      "Документ оформлен",
-    );
+    await expect(page.locator("tbody .badge.ready")).toHaveText(readyLabel);
     await expect(page.locator("tbody .status-hint")).toHaveText(hint);
     await expect(page.locator("tbody .ready-date")).toContainText(
       "13 нояб. 2026",
@@ -348,6 +528,18 @@ for (const [categoryId, categoryName, submission] of [
       .getByRole("combobox", { name: "Категория в таблице", exact: true })
       .click();
     await page.getByRole("option", { name: categoryName }).click();
+    await expect(readyTab).toContainText(readyLabel);
+    await expect(
+      page.getByRole("columnheader", {
+        name:
+          categoryId === "category-6"
+            ? "Провести до"
+            : categoryId === "category-8"
+              ? "Довести до"
+              : "Оформить до",
+        exact: true,
+      }),
+    ).toBeVisible();
     await page.getByLabel("Поиск документов в таблице").fill("НЕ НАЙДЕНО");
     await expect(page.locator("tbody tr")).toHaveCount(0);
     await page
@@ -356,9 +548,7 @@ for (const [categoryId, categoryName, submission] of [
     await expect(page.locator("tbody tr")).toHaveCount(1);
     await page.locator(".dashboard-tabs .tab-overdue").click();
     await expect(page.locator("tbody tr")).toHaveCount(1);
-    await expect(page.locator("tbody .badge.ready")).toHaveText(
-      "Документ оформлен",
-    );
+    await expect(page.locator("tbody .badge.ready")).toHaveText(readyLabel);
     await page
       .locator("nav")
       .getByRole("button", { name: "Проверки", exact: true })
@@ -373,9 +563,8 @@ for (const [categoryId, categoryName, submission] of [
       .locator(".category-card")
       .filter({ hasText: categoryName })
       .click();
-    await page
-      .getByRole("combobox", { name: "Статус", exact: true })
-      .selectOption("READY");
+    await page.getByRole("combobox", { name: "Статус", exact: true }).click();
+    await page.getByRole("option", { name: readyLabel, exact: true }).click();
     await expect(page.locator(".document-row")).toHaveCount(1);
     await row.getByRole("button").click();
     const delivery = submission ? "Сдан" : "Вложен в журнал";
@@ -505,7 +694,7 @@ test("Tuesday topic is fixed, Sunday topic is editable and scheduler controls sa
     .click();
   await page
     .getByRole("button", {
-      name: /ПЛАН ПРОВЕДЕНИЯ ВОЕННО-ПОЛИТИЧЕСКОГО ИНФОРМИРОВАНИЯ/,
+      name: /План проведения военно-политического информирования/,
     })
     .click();
   await expect(page.locator(".document-topic-detail")).toContainText(
@@ -518,7 +707,7 @@ test("Tuesday topic is fixed, Sunday topic is editable and scheduler controls sa
   await expect(page.getByLabel("Тема лектория")).not.toBeEditable();
   await page.getByRole("button", { name: "Закрыть окно", exact: true }).click();
   await page
-    .getByRole("button", { name: /ПЛАН ПРОВЕДЕНИЯ ВОСКРЕСНОГО ЛЕКТОРИЯ/ })
+    .getByRole("button", { name: /План проведения воскресного лектория/ })
     .click();
   await page
     .getByRole("dialog")

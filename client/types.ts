@@ -102,9 +102,52 @@ export const statuses: Record<string, string> = {
 export const isSubmission = (doc: { categoryId?: string }) =>
   doc.categoryId === "category-12";
 export const isReady = (doc: { status: string }) => doc.status === "READY";
+export function readinessTerms(doc?: { categoryId?: string }) {
+  if (doc?.categoryId === "category-6")
+    return {
+      status: "Лекторий проведен",
+      imperative: "Провести",
+      noun: "Проведение лектория",
+      deadline: "Срок проведения",
+      dateField: "Фактическая дата проведения",
+      dateLabel: "Дата проведения",
+      past: "Проведен",
+      count: "Проведено",
+      description: "Лектории проведены и ожидают вложения в журнал.",
+      help: "Когда лекторий должен быть проведен. Вложение в журнал отмечается отдельно.",
+    };
+  if (doc?.categoryId === "category-8")
+    return {
+      status: "Доведена",
+      imperative: "Довести",
+      noun: "Доведение",
+      deadline: "Срок доведения",
+      dateField: "Фактическая дата доведения",
+      dateLabel: "Дата доведения",
+      past: "Доведена",
+      count: "Доведено",
+      description: "Информация доведена; документы ожидают вложения в журнал.",
+      help: "Когда информация должна быть доведена. Вложение в журнал отмечается отдельно.",
+    };
+  return {
+    status: "Документ оформлен",
+    imperative: "Оформить",
+    noun: "Оформление",
+    deadline: "Срок оформления",
+    dateField: "Фактическая дата оформления",
+    dateLabel: "Дата оформления",
+    past: "Оформлен",
+    count: "Оформлено",
+    description: "Документы оформлены и ожидают вложения в журнал или сдачи.",
+    help: isSubmission(doc || {})
+      ? "Когда рапорт должен быть подготовлен. Сдача отмечается отдельно."
+      : "Когда документ должен быть подготовлен. Вложение отмечается отдельно.",
+  };
+}
 export const readyHint = (doc: { categoryId?: string }) =>
   isSubmission(doc) ? "Ожидает сдачи" : "Ожидает вложения в журнал";
 export function statusText(status: string, doc?: { categoryId?: string }) {
+  if (status === "READY") return readinessTerms(doc).status;
   if (doc && isSubmission(doc)) {
     return (
       (
@@ -134,10 +177,12 @@ export const events: Record<string, string> = {
   TRANSFER_ADMIN: "Администрирование передано",
   CATEGORY: "Категория изменена",
   SUBDOCUMENT: "Лист беседы изменён",
+  RENAME: "Название приведено к обычному регистру",
   RECURRENCE: "Расписание документов изменено",
 };
 export function eventText(event: Audit) {
   const doc = event.data.after || event.data.before;
+  if (event.type === "READY") return statusText("READY", doc);
   if (doc && isSubmission(doc)) {
     return (
       (

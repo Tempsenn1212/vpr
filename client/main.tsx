@@ -38,11 +38,13 @@ import {
   eventText,
   isReady,
   readyHint,
+  readinessTerms,
 } from "./types";
 import { api, ApiError, setSessionToken } from "./api";
 import { Dashboard, type DashboardFilter } from "./Dashboard";
 import { RecurringPanel, Subdocuments, ruleDescription } from "./Recurring";
 import { CategorySelect } from "./CategorySelect";
+import { AppSelect } from "./AppSelect";
 import { DocumentStatus as Badge } from "./DocumentStatus";
 import "./style.css";
 declare global {
@@ -499,7 +501,7 @@ function App() {
                     navigate("dashboard");
                   }}
                   value={ready.length}
-                  foot="Ожидают вложения или сдачи"
+                  foot="Оформлены, проведены или доведены"
                   kind="ready"
                 />
                 <Stat
@@ -595,7 +597,8 @@ function App() {
                       <div className="category-counts">
                         <span className="category-ready-count">
                           <Check size={13} aria-hidden="true" />
-                          Оформлено: {list.filter(isReady).length}
+                          {readinessTerms({ categoryId: c.id }).count}:{" "}
+                          {list.filter(isReady).length}
                         </span>
                         <span>
                           <i className="dot red" />
@@ -632,8 +635,9 @@ function App() {
                 onOpen={openDoc}
               />
               <p className="footnote">
-                Счётчики отражают разные условия и могут пересекаться.
-                Оформление не закрывает срок предоставления.
+                Счётчики отражают разные условия и могут пересекаться. Отметка
+                оформления, проведения или доведения не закрывает срок
+                предоставления.
               </p>
             </>
           )}
@@ -903,12 +907,14 @@ function DocumentList({
                 </small>
               )}
               {d.readyDueDate && (
-                <small>Оформить до {fmt(d.readyDueDate)}</small>
+                <small>
+                  {readinessTerms(d).imperative} до {fmt(d.readyDueDate)}
+                </small>
               )}
               {d.ready &&
                 !["IN_PROGRESS", "NEEDS_CORRECTION"].includes(d.status) && (
                   <small className="ready-date">
-                    Оформлен:{" "}
+                    {readinessTerms(d).past}:{" "}
                     {d.ready.date
                       ? fmt(d.ready.date)
                       : stamp(d.ready.at, s.timeZone)}
@@ -985,40 +991,46 @@ function CategoryView({ s, id, onOpen, onCreate, back }: any) {
             onChange={(e) => setQuery(e.target.value)}
           />
         </label>
-        <select
-          aria-label="Статус"
+        <AppSelect
+          label="Статус"
           value={status}
-          onChange={(e) => setStatus(e.target.value)}
-        >
-          <option value="">Все статусы</option>
-          {Object.entries(statuses).map(([k, v]) => (
-            <option key={k} value={k}>
-              {statusText(k, { categoryId: id })}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="Срок"
+          onChange={setStatus}
+          options={[
+            { id: "", name: "Все статусы" },
+            ...Object.keys(statuses).map((k) => ({
+              id: k,
+              name: statusText(k, { categoryId: id }),
+            })),
+          ]}
+        />
+        <AppSelect
+          label="Срок"
           value={due}
-          onChange={(e) => setDue(e.target.value)}
-        >
-          <option value="">Все сроки</option>
-          <option value="overdue">
-            {id === "category-12"
-              ? "Просрочено без сдачи"
-              : "Просрочено без вложения"}
-          </option>
-          <option value="today">Срок сегодня</option>
-          <option value="future">Срок впереди</option>
-          <option value="late">
-            {id === "category-12"
-              ? "Сдан с опозданием"
-              : "Вложено с опозданием"}
-          </option>
-          <option value="on-time">
-            {id === "category-12" ? "Сдан в срок" : "Вложено в срок"}
-          </option>
-        </select>
+          onChange={setDue}
+          options={[
+            { id: "", name: "Все сроки" },
+            {
+              id: "overdue",
+              name:
+                id === "category-12"
+                  ? "Просрочено без сдачи"
+                  : "Просрочено без вложения",
+            },
+            { id: "today", name: "Срок сегодня" },
+            { id: "future", name: "Срок впереди" },
+            {
+              id: "late",
+              name:
+                id === "category-12"
+                  ? "Сдан с опозданием"
+                  : "Вложено с опозданием",
+            },
+            {
+              id: "on-time",
+              name: id === "category-12" ? "Сдан в срок" : "Вложено в срок",
+            },
+          ]}
+        />
       </div>
       <DocumentList docs={docs} s={s} onOpen={onOpen} />
     </>
@@ -1115,7 +1127,7 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
         )}
       </label>
       <label className="field">
-        Срок оформления
+        {readinessTerms({ categoryId: cat }).deadline}
         <input
           type="date"
           min="1900-01-01"
@@ -1123,11 +1135,7 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
           value={readyDue}
           onChange={(e) => setReadyDue(e.target.value)}
         />
-        <small>
-          {cat === "category-12"
-            ? "Когда рапорт должен быть подготовлен. Сдача отмечается отдельно."
-            : "Когда документ должен быть подготовлен. Вложение отмечается отдельно."}
-        </small>
+        <small>{readinessTerms({ categoryId: cat }).help}</small>
       </label>
       <label className="field">
         Срок предоставления
@@ -1236,10 +1244,10 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
         <div className="readiness-note">
           <ClipboardCheck size={24} aria-hidden="true" />
           <div>
-            <b>Документ оформлен</b>
+            <b>{readinessTerms(d).status}</b>
             {d.ready && (
               <span>
-                Дата оформления:{" "}
+                {readinessTerms(d).dateLabel}:{" "}
                 {d.ready.date
                   ? fmt(d.ready.date)
                   : stamp(d.ready.at, s.timeZone)}
@@ -1279,7 +1287,8 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
       )}
       {d.readyDueDate && (
         <p className={"deadline " + d.readyDeadline?.kind}>
-          Оформить до {fmt(d.readyDueDate)} · {d.readyDeadline?.label}
+          {readinessTerms(d).imperative} до {fmt(d.readyDueDate)} ·{" "}
+          {d.readyDeadline?.label}
         </p>
       )}
       {d.completed && !d.deleted && (
@@ -1295,7 +1304,7 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
       )}
       <div className="marks">
         {mark("Создал", { ...d.createdBy, at: d.createdAt })}
-        {d.ready && mark("Документ оформлен", d.ready)}
+        {d.ready && mark(readinessTerms(d).status, d.ready)}
         {d.placement &&
           mark(submission ? "Сдал" : "Вложение отмечено", d.placement)}
         {d.confirmation && mark("Подтверждено", d.confirmation)}
@@ -1319,7 +1328,7 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
                 onClick={() => action(d, "ready")}
               >
                 <Check />
-                Документ оформлен
+                {readinessTerms(d).status}
               </button>
             )}
             {["IN_PROGRESS", "READY", "NEEDS_CORRECTION"].includes(
@@ -1421,7 +1430,7 @@ function ActionForm({ modal, s, busy, submit }: any) {
     placement = ["ready", "place", "place-confirm"].includes(a),
     confirmation = ["return", "delete"].includes(a);
   const labels: any = {
-    ready: "Документ оформлен",
+    ready: readinessTerms(d).status,
     place: "Вложен в журнал",
     "place-confirm": "Вложен в журнал и подтверждён",
     confirm: "Подтвердить вложение",
@@ -1437,7 +1446,7 @@ function ActionForm({ modal, s, busy, submit }: any) {
   }
   const dateLabel =
     a === "ready"
-      ? "Фактическая дата оформления"
+      ? readinessTerms(d).dateField
       : isSubmission(d)
         ? "Фактическая дата сдачи"
         : "Фактическая дата вложения";
@@ -1573,18 +1582,15 @@ function Reviews({ s, busy, open, run, showModal }: any) {
       <div className="filters">
         <label className="field compact">
           Период учёта
-          <select
-            aria-label="Период"
+          <AppSelect
+            label="Период"
             value={p?.id || ""}
-            onChange={(e) => scope(e.target.value, cat)}
-          >
-            {s.periods.map((p: Period) => (
-              <option key={p.id} value={p.id}>
-                {fmt(p.start)} — {fmt(p.end)}
-                {p.transition ? " · переходный" : ""}
-              </option>
-            ))}
-          </select>
+            onChange={(value) => scope(value, cat)}
+            options={s.periods.map((p: Period) => ({
+              id: p.id,
+              name: `${fmt(p.start)} — ${fmt(p.end)}${p.transition ? " · переходный" : ""}`,
+            }))}
+          />
         </label>
         <div className="field compact">
           <span>Область выбора</span>
@@ -1835,8 +1841,8 @@ function AuditList({
                   )}
                   {before.ready?.date !== after.ready?.date && (
                     <p>
-                      Дата оформления: {before.ready?.date || "—"} →{" "}
-                      {after.ready?.date || "—"}
+                      {readinessTerms(after).dateLabel}:{" "}
+                      {before.ready?.date || "—"} → {after.ready?.date || "—"}
                     </p>
                   )}
                 </div>
@@ -1875,43 +1881,47 @@ function HistoryView({ s, open }: any) {
         </div>
       </div>
       <div className="filters">
-        <select
-          aria-label="Карточка в истории"
+        <AppSelect
+          label="Карточка в истории"
           value={doc}
-          onChange={(e) => setDoc(e.target.value)}
-        >
-          <option value="">Все карточки и настройки</option>
-          {s.documents.map((d: Doc) => (
-            <option key={d.id} value={d.id}>
-              {d.title}
-              {d.deleted ? " · удалён" : ""}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="Участник в истории"
+          onChange={setDoc}
+          options={[
+            { id: "", name: "Все карточки и настройки" },
+            ...s.documents.map((d: Doc) => ({
+              id: d.id,
+              name: d.title + (d.deleted ? " · удалён" : ""),
+            })),
+          ]}
+        />
+        <AppSelect
+          label="Участник в истории"
           value={actor}
-          onChange={(e) => setActor(e.target.value)}
-        >
-          <option value="">Все участники</option>
-          {s.users.map((u: User) => (
-            <option key={u.id} value={u.id}>
-              {u.name}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="Тип события"
+          onChange={setActor}
+          options={[
+            { id: "", name: "Все участники" },
+            ...s.users.map((u: User) => ({ id: u.id, name: u.name })),
+          ]}
+        />
+        <AppSelect
+          label="Тип события"
           value={type}
-          onChange={(e) => setType(e.target.value)}
-        >
-          <option value="">Все события</option>
-          {Object.entries(events).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v}
-            </option>
-          ))}
-        </select>
+          onChange={setType}
+          options={[
+            { id: "", name: "Все события" },
+            ...Object.entries(events).map(([id, name]) => ({
+              id,
+              name:
+                id === "READY"
+                  ? doc
+                    ? statusText(
+                        "READY",
+                        s.documents.find((d: Doc) => d.id === doc),
+                      )
+                    : "Оформление / проведение / доведение"
+                  : name,
+            })),
+          ]}
+        />
         <label className="checkbox">
           <input
             type="checkbox"
@@ -2114,15 +2124,15 @@ function SettingsView({ s, run, busy, setError }: any) {
                 </label>
                 <label className="field">
                   Рабочая роль
-                  <select
+                  <AppSelect
+                    label="Рабочая роль"
                     value={userDraft.role}
-                    onChange={(e) =>
-                      setUser({ ...userDraft, role: e.target.value })
-                    }
-                  >
-                    <option value="WORKER">Работник</option>
-                    <option value="CHIEF">Начальник</option>
-                  </select>
+                    onChange={(value) => setUser({ ...userDraft, role: value })}
+                    options={[
+                      { id: "WORKER", name: "Работник" },
+                      { id: "CHIEF", name: "Начальник" },
+                    ]}
+                  />
                 </label>
                 <label className="checkbox">
                   <input
@@ -2248,22 +2258,20 @@ function SettingsView({ s, run, busy, setError }: any) {
             </p>
             <label className="field">
               Новый администратор
-              <select
+              <AppSelect
+                label="Новый администратор"
                 value={target}
-                onChange={(e) => {
-                  setTarget(e.target.value);
+                onChange={(value) => {
+                  setTarget(value);
                   setTransferAck(false);
                 }}
-              >
-                <option value="">Выберите участника</option>
-                {s.users
-                  .filter((u: User) => u.active && u.id !== s.me.id)
-                  .map((u: User) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
-                    </option>
-                  ))}
-              </select>
+                options={[
+                  { id: "", name: "Выберите участника" },
+                  ...s.users
+                    .filter((u: User) => u.active && u.id !== s.me.id)
+                    .map((u: User) => ({ id: u.id, name: u.name })),
+                ]}
+              />
             </label>
             <label className="checkbox">
               <input

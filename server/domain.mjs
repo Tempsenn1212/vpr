@@ -106,13 +106,36 @@ export function readyDeadline(d, day, zone = "Europe/Moscow") {
     { dueDate: d.readyDueDate, placement: actual ? { date: actual } : null },
     day,
   );
+  const terms = readinessWording(d);
   return {
     ...result,
     label: result.label
-      .replace("Вложен", "Оформлен")
-      .replace("Просрочено", "Оформление просрочено")
-      .replace("Срок сегодня", "Оформить сегодня"),
+      .replace("Вложен", terms.done)
+      .replace("Просрочено", terms.overdue)
+      .replace("Срок сегодня", terms.today),
   };
+}
+function readinessWording(d) {
+  return d.categoryId === "category-6"
+    ? {
+        done: "Лекторий проведен",
+        overdue: "Проведение просрочено",
+        today: "Провести сегодня",
+        date: "проведения",
+      }
+    : d.categoryId === "category-8"
+      ? {
+          done: "Доведена",
+          overdue: "Доведение просрочено",
+          today: "Довести сегодня",
+          date: "доведения",
+        }
+      : {
+          done: "Оформлен",
+          overdue: "Оформление просрочено",
+          today: "Оформить сегодня",
+          date: "оформления",
+        };
 }
 // Journal placement completes the work; a chief's confirmation is optional.
 export function isCompleted(d) {
@@ -205,7 +228,7 @@ export function transition(source, action, body, actor, at, day) {
       };
       demand(
         d.ready.date <= day,
-        "Фактическая дата оформления не может быть в будущем",
+        `Фактическая дата ${readinessWording(d).date} не может быть в будущем`,
       );
       d.placement = null;
       d.confirmation = null;

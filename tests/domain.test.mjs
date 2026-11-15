@@ -7,6 +7,7 @@ import {
   proposeSchedule,
   transition,
   date,
+  readyDeadline,
 } from "../server/domain.mjs";
 const initial = [
   {
@@ -112,4 +113,81 @@ test("5: direct placement does not invent READY mark", () => {
   assert.equal(d.ready, null);
   assert.equal(d.status, "PLACED");
   assert.equal(d.placement.at, "2026-11-20T12:00:00Z");
+});
+test("category-specific readiness terms preserve independent deadlines and real marks", () => {
+  for (const [categoryId, done, dueToday, overdue, dateWord] of [
+    [
+      "category-6",
+      "Лекторий проведен",
+      "Провести сегодня",
+      "Проведение просрочено",
+      "проведения",
+    ],
+    [
+      "category-8",
+      "Доведена",
+      "Довести сегодня",
+      "Доведение просрочено",
+      "доведения",
+    ],
+    [
+      "category-2",
+      "Оформлен",
+      "Оформить сегодня",
+      "Оформление просрочено",
+      "оформления",
+    ],
+  ]) {
+    const source = {
+      categoryId,
+      status: "IN_PROGRESS",
+      version: 1,
+      readyDueDate: "2026-11-13",
+      dueDate: "2026-11-14",
+      ready: null,
+      placement: null,
+    };
+    assert.equal(readyDeadline(source, "2026-11-13").label, dueToday);
+    assert.match(
+      readyDeadline(source, "2026-11-15").label,
+      new RegExp(overdue),
+    );
+    const actor = {
+      id: "worker",
+      name: "Синтетический участник",
+      role: "WORKER",
+    };
+    assert.throws(
+      () =>
+        transition(
+          source,
+          "ready",
+          { date: "2026-11-16" },
+          actor,
+          "2026-11-15T12:00:00Z",
+          "2026-11-15",
+        ),
+      new RegExp(`дата ${dateWord}`),
+    );
+    const ready = transition(
+      source,
+      "ready",
+      { date: "2026-11-13" },
+      actor,
+      "2026-11-15T12:00:00Z",
+      "2026-11-15",
+    );
+    assert.equal(ready.status, "READY");
+    assert.equal(ready.ready.date, "2026-11-13");
+    assert.equal(ready.placement, null);
+    assert.equal(readyDeadline(ready, "2026-11-15").label, done + " в срок");
+    assert.equal(deadline(ready, "2026-11-15").kind, "overdue");
+    assert.equal(
+      readyDeadline(
+        { ...ready, ready: { ...ready.ready, date: "2026-11-14" } },
+        "2026-11-15",
+      ).label,
+      done + " с опозданием на 1 дней",
+    );
+  }
 });

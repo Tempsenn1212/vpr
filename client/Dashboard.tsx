@@ -1,7 +1,16 @@
 import React, { useState } from "react";
 import { Search } from "lucide-react";
-import { fmt, isReady, readyHint, stamp, type Doc, type State } from "./types";
+import {
+  fmt,
+  isReady,
+  readyHint,
+  readinessTerms,
+  stamp,
+  type Doc,
+  type State,
+} from "./types";
 import { CategorySelect } from "./CategorySelect";
+import { AppSelect } from "./AppSelect";
 import { DocumentStatus } from "./DocumentStatus";
 export type DashboardFilter = "all" | "ready" | "overdue" | "completed";
 export function Dashboard({
@@ -49,7 +58,7 @@ export function Dashboard({
     );
   const tabs: [DashboardFilter, string][] = [
     ["all", "Всего документов"],
-    ["ready", "Документ оформлен"],
+    ["ready", readinessTerms({ categoryId: category }).status],
     [
       "overdue",
       category === "category-12"
@@ -65,8 +74,8 @@ export function Dashboard({
           <div className="eyebrow">ОБЩИЙ УЧЁТ</div>
           <h1>Таблица документов</h1>
           <p>
-            Оформление, вложение в журнал, сдача рапортов и выполнение месячных
-            групп.
+            Оформление, проведение лекториев, доведение, вложение в журнал и
+            сдача рапортов.
           </p>
         </div>
         <button className="button" onClick={create}>
@@ -88,8 +97,10 @@ export function Dashboard({
       </div>
       {filter === "ready" && (
         <p className="ready-filter-note">
-          Документы оформлены и ожидают вложения в журнал или сдачи. Срок
-          предоставления учитывается отдельно.
+          {category
+            ? readinessTerms({ categoryId: category }).description
+            : "Документы оформлены, лектории проведены или информация доведена; ожидают вложения в журнал или сдачи."}{" "}
+          Срок предоставления учитывается отдельно.
         </p>
       )}
       <div className="filters">
@@ -109,15 +120,24 @@ export function Dashboard({
           onChange={setCategory}
           allLabel="Все категории"
         />
-        <select
-          aria-label="Порядок в таблице"
+        <AppSelect
+          label="Порядок в таблице"
           value={sort}
-          onChange={(e) => setSort(e.target.value)}
-        >
-          <option value="due">По сроку вложения / сдачи</option>
-          <option value="ready">По сроку оформления</option>
-          <option value="title">По названию</option>
-        </select>
+          onChange={setSort}
+          options={[
+            { id: "due", name: "По сроку вложения / сдачи" },
+            {
+              id: "ready",
+              name:
+                category === "category-6"
+                  ? "По сроку проведения"
+                  : category === "category-8"
+                    ? "По сроку доведения"
+                    : "По сроку оформления",
+            },
+            { id: "title", name: "По названию" },
+          ]}
+        />
       </div>
       <p className="muted">
         Показано: {docs.length} из {all.length}. Месячная группа из 40 листов
@@ -135,7 +155,7 @@ export function Dashboard({
               {[
                 "Документ",
                 "Категория",
-                "Оформить до",
+                readinessTerms({ categoryId: category }).imperative + " до",
                 category === "category-12" ? "Сдать до" : "Вложить / сдать до",
                 "Статус",
                 category === "category-12"
@@ -177,7 +197,7 @@ export function Dashboard({
                   {d.ready &&
                     !["IN_PROGRESS", "NEEDS_CORRECTION"].includes(d.status) && (
                       <small className="ready-date">
-                        Оформлен:{" "}
+                        {readinessTerms(d).past}:{" "}
                         {d.ready.date
                           ? fmt(d.ready.date)
                           : stamp(d.ready.at, s.timeZone)}

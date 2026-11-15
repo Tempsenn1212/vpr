@@ -1,7 +1,7 @@
 export const STATUS = {
   IN_PROGRESS: "В работе",
   READY: "Оформлен, ожидает вложения в журнал",
-  PLACED: "Вложен в журнал, ожидает подтверждения",
+  PLACED: "Вложен в журнал",
   CONFIRMED: "Вложение подтверждено",
   NEEDS_CORRECTION: "Требует исправления",
 };
@@ -74,8 +74,11 @@ export function deadline(d, day) {
   };
 }
 export function summary(docs) {
+  const completed = docs.filter(isCompleted).length;
   return {
     total: docs.length,
+    completed,
+    unfinished: docs.length - completed,
     ...Object.fromEntries(
       Object.keys(STATUS).map((s) => [
         s,
@@ -83,6 +86,10 @@ export function summary(docs) {
       ]),
     ),
   };
+}
+// Journal placement completes the work; a chief's confirmation is optional.
+export function isCompleted(d) {
+  return d.status === "PLACED" || d.status === "CONFIRMED";
 }
 export function scheduleInput(b) {
   const anchor = date(b.anchor);

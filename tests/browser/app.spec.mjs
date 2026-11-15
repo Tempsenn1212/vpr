@@ -6,11 +6,11 @@ const login = async (page, name = "Анна Смирнова") => {
     page.getByRole("heading", { name: "Обзор документации" }),
   ).toBeVisible();
 };
-async function createUI(page, title) {
+async function createUI(page, title, dueDate = "2026-11-27") {
   await page.getByRole("button", { name: "Создать документ" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Название", { exact: true }).fill(title);
-  await dialog.getByLabel("Срок предоставления").fill("2026-11-27");
+  await dialog.getByLabel("Срок предоставления").fill(dueDate);
   await dialog.getByRole("button", { name: "Сохранить документ" }).click();
   await expect(dialog).not.toBeVisible();
 }
@@ -151,7 +151,7 @@ test("desktop chief: exclude selected card in category, review snapshot and hist
     .first()
     .click();
   await page.getByLabel("Категория проверки").selectOption("category-1");
-  const all = page.getByLabel("Выбрать все ожидающие");
+  const all = page.getByLabel("Выбрать вложенные");
   await all.check();
   const selected = page.locator(".document-row input:not([disabled])");
   const n = await selected.count();
@@ -277,6 +277,38 @@ test("stale form keeps draft and offers current server data instead of overwriti
   );
   await a.close();
   await b.close();
+});
+
+test("worker completes a document without review; home and old-period backlog exclude it", async ({ page }) => {
+  await login(page);
+  const completedStat = page.locator(".stat").filter({ hasText: "Завершено" });
+  const before = Number(await completedStat.locator("strong").innerText());
+  const suffix = Date.now();
+  const doneTitle = "Завершён без проверки " + suffix;
+  const pendingTitle = "Не вложен в журнал " + suffix;
+  await page.locator(".category-card").filter({ hasText: "Иконка №1" }).click();
+  await createUI(page, doneTitle, "2020-01-01");
+  await page.getByRole("button", { name: new RegExp(doneTitle) }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Вложен в журнал", exact: true }).click();
+  await page.getByLabel("Фактическая дата вложения").fill("2020-01-01");
+  await page.getByRole("dialog").getByRole("button", { name: "Вложен в журнал", exact: true }).click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await page.getByRole("button", { name: new RegExp(doneTitle) }).click();
+  await expect(page.locator(".completion-note")).toContainText("Документ завершён");
+  await expect(page.getByRole("dialog").locator(".badge")).toHaveText("Вложен в журнал");
+  await expect(page.getByRole("dialog").getByRole("button", { name: "Подтвердить вложение", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Закрыть окно", exact: true }).click();
+  await createUI(page, pendingTitle, "2020-01-01");
+  await page.locator("nav").getByRole("button", { name: "Обзор", exact: true }).click();
+  await expect(completedStat.locator("strong")).toHaveText(String(before + 1));
+  await expect(page.locator(".document-list").getByRole("button", { name: new RegExp(doneTitle) })).toHaveCount(0);
+  await expect(page.locator(".document-list").getByRole("button", { name: new RegExp(pendingTitle) })).toBeVisible();
+  await expect(page.locator("nav em")).toHaveCount(0);
+  await page.locator("nav").getByRole("button", { name: "Проверки", exact: true }).click();
+  await expect(page.getByText(/Не проведено проверок после плановой даты/)).toHaveCount(0);
+  const backlog = page.locator(".document-list").filter({ hasText: pendingTitle });
+  await expect(backlog.getByRole("button", { name: new RegExp(pendingTitle) })).toBeVisible();
+  await expect(backlog.getByRole("button", { name: new RegExp(doneTitle) })).toHaveCount(0);
 });
 
 test("administrator UI saves users, categories, schedule preview and preserves worker permissions", async ({

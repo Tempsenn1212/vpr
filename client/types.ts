@@ -28,6 +28,7 @@ export type Doc = {
   confirmation: Mark | null;
   rejection: Mark | null;
   deleted: boolean;
+  completed: boolean;
   deadline: { kind: string; label: string };
 };
 export type Category = {
@@ -69,7 +70,7 @@ export type State = {
 export const statuses: Record<string, string> = {
   IN_PROGRESS: "В работе",
   READY: "Оформлен, ожидает вложения в журнал",
-  PLACED: "Вложен в журнал, ожидает подтверждения",
+  PLACED: "Вложен в журнал",
   CONFIRMED: "Вложение подтверждено",
   NEEDS_CORRECTION: "Требует исправления",
 };

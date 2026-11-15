@@ -7,6 +7,7 @@ import {
   today,
   deadline,
   summary,
+  isCompleted,
   periods,
   proposeSchedule,
   transition,
@@ -310,7 +311,7 @@ export class Store {
         results.push({
           id: item.id,
           result: "skipped",
-          reason: "Не ожидает подтверждения",
+          reason: "Дополнительное подтверждение недоступно в этом статусе",
         });
         continue;
       }
@@ -478,7 +479,7 @@ export class Store {
     if (b.hidden)
       demand(
         !this.documents().some(
-          (d) => !d.deleted && d.categoryId === id && d.status !== "CONFIRMED",
+          (d) => !d.deleted && d.categoryId === id && !isCompleted(d),
         ),
         "Сначала обработайте или перенесите незавершённые документы",
       );
@@ -497,6 +498,7 @@ export class Store {
   state(actor) {
     const docs = this.documents().map((d) => ({
       ...d,
+      completed: isCompleted(d),
       deadline: deadline(d, this.day()),
     }));
     const list = this.periodList();

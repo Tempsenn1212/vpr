@@ -937,6 +937,23 @@ main {
   color: var(--red);
   font-size: 11px;
 }
+.completion-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--heading-line);
+  border-left: 3px solid #bc934e;
+  border-radius: 9px;
+  background: var(--pale);
+  color: var(--primary);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.completion-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
 .warning {
   background: #fff7e9;
   color: #966b2e;

@@ -654,6 +654,83 @@ test("admin and category permissions are independent from working role; category
     200,
   );
 });
+test("worker placement completes work with no chief confirmation or period review", async (t) => {
+  const f = await fixture(t);
+  let d = await f.create();
+  d = await f.action(f.other, d, "place", { date: "2026-11-27" });
+  const state = (await f.worker.request("/state")).data;
+  const saved = state.documents.find((x) => x.id === d.id);
+  assert.equal(saved.completed, true);
+  assert.equal(saved.status, "PLACED");
+  assert.equal(saved.confirmation, null);
+  assert.equal(saved.placement.userId, "worker-2");
+  assert.equal(state.reviewRecords.length, 0);
+  assert.deepEqual(state.audit.map((e) => e.type).sort(), ["CREATE", "PLACE"]);
+  const review = await f.chief.request("/reviews", { periodId: state.periods[0].id });
+  assert.equal(review.status, 200);
+  assert.equal(review.data.snapshot.summary.completed, 1);
+  assert.equal(review.data.snapshot.summary.unfinished, 0);
+  assert.equal(f.store.document(d.id).status, "PLACED");
+  assert.equal(
+    (await f.worker.request("/categories/category-1", {
+      name: "Завершённая категория", position: 1, hidden: true,
+    }, "PATCH")).status,
+    200,
+  );
+});
+test("optional confirmation, reset and revocation preserve completion; reject and return reopen work", async (t) => {
+  const f = await fixture(t);
+  const completed = async (id) =>
+    (await f.worker.request("/state")).data.documents.find((d) => d.id === id).completed;
+  let d = await f.create();
+  assert.equal(await completed(d.id), false);
+  d = await f.action(f.worker, d, "ready");
+  assert.equal(await completed(d.id), false);
+  d = await f.action(f.worker, d, "place", { date: "2026-11-27" });
+  d = await f.action(f.chief, d, "confirm");
+  assert.equal(await completed(d.id), true);
+  d = await f.action(f.chief, d, "revoke", { reason: "Дополнительная проверка отменена" });
+  assert.equal(await completed(d.id), true);
+  d = await f.action(f.chief, d, "confirm");
+  const edited = await f.worker.request("/documents/" + d.id, {
+    version: d.version, title: "Новое название", categoryId: d.categoryId,
+    dueDate: d.dueDate, acknowledgeReset: true,
+  }, "PATCH");
+  assert.equal(edited.status, 200);
+  d = edited.data;
+  assert.equal(d.confirmation, null);
+  assert.equal(await completed(d.id), true);
+  d = await f.action(f.chief, d, "reject", { reason: "Вложения фактически нет" });
+  assert.equal(await completed(d.id), false);
+  assert.equal(d.placement, null);
+  d = await f.action(f.worker, d, "place", { date: "2026-11-27" });
+  assert.equal(await completed(d.id), true);
+  await f.action(f.worker, d, "return", { reason: "Нужна доработка", confirmed: true });
+  assert.equal(await completed(d.id), false);
+});
+test("stored PLACED documents become complete after restart without rewriting data or history", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "vpr-optional-review-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const config = { database: join(dir, "existing.sqlite"), demo: true, production: false, seed: false, clock: fixed };
+  let instance = createApp(config);
+  const worker = instance.store.user("worker-1");
+  let d = instance.store.create(worker, { title: "Существующий документ", categoryId: "category-1", dueDate: "2026-11-27" });
+  d = instance.store.action(worker, d.id, "place", { version: d.version, date: "2026-11-27" });
+  const before = instance.db.prepare("SELECT data FROM documents WHERE id=?").get(d.id).data;
+  const audit = instance.store.state(worker).audit;
+  instance.db.close();
+  instance = createApp(config);
+  try {
+    const state = instance.store.state(instance.store.user(worker.id));
+    assert.equal(state.documents[0].completed, true);
+    assert.equal(state.documents[0].confirmation, null);
+    assert.equal(state.reviewRecords.length, 0);
+    assert.equal(instance.db.prepare("SELECT data FROM documents WHERE id=?").get(d.id).data, before);
+    assert.deepEqual(state.audit, audit);
+  } finally {
+    instance.db.close();
+  }
+});
 test("transaction rolls back mutation AND audit on a failing request", async (t) => {
   const f = await fixture(t);
   const actor = f.store.user("worker-1");

@@ -11,7 +11,6 @@ import {
   FileText,
   Folder,
   Check,
-  Clock,
   AlertCircle,
   ChevronRight,
   Search,
@@ -303,7 +302,13 @@ function App() {
     docs = s.documents.filter((d) => !d.deleted),
     visibleCats = s.categories.filter((c) => !c.hidden),
     overdue = docs.filter((d) => d.deadline.kind === "overdue"),
-    waiting = docs.filter((d) => d.status === "PLACED"),
+    completed = docs.filter((d) => d.completed),
+    attention = docs.filter(
+      (d) =>
+        !d.completed &&
+        (["overdue", "today"].includes(d.deadline.kind) ||
+          d.status === "NEEDS_CORRECTION"),
+    ),
     next = s.periods.find((p) => p.end >= s.today) || s.periods.at(-1),
     settingsAllowed = chief || me.admin;
   const selectedDoc =
@@ -336,9 +341,6 @@ function App() {
             >
               <Icon size={20} />
               <span>{label}</span>
-              {id === "reviews" && waiting.length > 0 && (
-                <em>{waiting.length}</em>
-              )}
             </button>
           ))}
         </nav>
@@ -388,7 +390,7 @@ function App() {
                   : view === "category"
                     ? s.categories.find((c) => c.id === category)?.name
                     : view === "reviews"
-                      ? "Контроль и подтверждение"
+                      ? "Периоды и дополнительные проверки"
                       : view === "history"
                         ? "Журнал действий"
                         : "Настройки приложения"}
@@ -447,7 +449,7 @@ function App() {
                     {me.name} · {chief ? "Начальник" : "Работник"}
                     {me.admin ? " · Администратор" : ""}
                     <br />
-                    Сроки, вложения и подтверждения — в одном месте.
+                    Сроки и вложения — в одном месте. Проверка необязательна.
                   </p>
                 </div>
                 <button
@@ -461,7 +463,7 @@ function App() {
               <section className="stats">
                 <Stat
                   icon={<FileText />}
-                  label="Активных документов"
+                  label="Всего документов"
                   value={docs.length}
                   foot="Во всех категориях"
                 />
@@ -473,9 +475,9 @@ function App() {
                   kind="red"
                 />
                 <Stat
-                  icon={<Clock />}
-                  label="Ожидают подтверждения"
-                  value={waiting.length}
+                  icon={<CheckCheck />}
+                  label="Завершено"
+                  value={completed.length}
                   foot="Вложены в журнал"
                   kind="amber"
                 />
@@ -486,7 +488,7 @@ function App() {
                     <CalendarDays size={25} />
                   </div>
                   <div>
-                    <span className="eyebrow">БЛИЖАЙШАЯ ПРОВЕРКА</span>
+                    <span className="eyebrow">ПЕРИОД УЧЁТА</span>
                     <h3>{fmt(next.end)}</h3>
                     <p>
                       Документы со сроком {fmt(next.start)} — {fmt(next.end)}
@@ -496,7 +498,7 @@ function App() {
                     className="button secondary"
                     onClick={() => navigate("reviews")}
                   >
-                    К проверке
+                    Открыть период
                     <ArrowUpRight size={17} />
                   </button>
                 </section>
@@ -534,9 +536,9 @@ function App() {
                         <span>
                           <i className="dot amber" />
                           {
-                            list.filter((d) => d.status === "PLACED").length
+                            list.filter((d) => d.completed).length
                           }{" "}
-                          ожидают подтверждения
+                          завершено
                         </span>
                       </div>
                     </button>
@@ -551,7 +553,7 @@ function App() {
                 <span>Ближайшие сроки первыми</span>
               </div>
               <DocumentList
-                docs={[...overdue, ...waiting]
+                docs={[...attention]
                   .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
                   .slice(0, 6)}
                 s={s}
@@ -1018,8 +1020,8 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
             checked={ack}
             onChange={(e) => setAck(e.target.checked)}
           />
-          При сохранении подтверждение будет снято, карточка вернётся к ожиданию
-          подтверждения. История сохранится.
+          При сохранении дополнительное подтверждение будет снято. Документ
+          останется завершённым и вложенным в журнал. История сохранится.
         </label>
       )}
       <button disabled={busy} className="button full" type="submit">
@@ -1065,9 +1067,10 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action }: any) {
       {d.deadline && (
         <p className={"deadline " + d.deadline.kind}>{d.deadline.label}</p>
       )}
-      {d.status === "PLACED" && (
-        <p className="warning">
-          Ожидает подтверждения. Фактическая дата указана участником.
+      {d.completed && !d.deleted && (
+        <p className="completion-note">
+          <CheckCheck size={18} />
+          <span>Документ завершён. Дополнительная проверка необязательна.</span>
         </p>
       )}
       <div className="marks">
@@ -1281,17 +1284,12 @@ function Reviews({ s, busy, open, run, showModal }: any) {
           (cat === "ALL" || cat === d.categoryId),
       )
     : [];
-  const waiting = list.filter((d) => d.status === "PLACED");
+  const unconfirmed = list.filter((d) => d.status === "PLACED");
   const past = s.documents.filter(
     (d: Doc) =>
-      !d.deleted && d.status !== "CONFIRMED" && p && d.dueDate < p.start,
+      !d.deleted && !d.completed && p && d.dueDate < p.start,
   );
   const records = s.reviewRecords.filter((r: any) => r.period_id === p?.id);
-  const missed = s.periods.filter(
-    (p: Period) =>
-      p.end < s.today &&
-      !s.reviewRecords.some((r: any) => r.period_id === p.id),
-  );
   function scope(id: string, c: string) {
     setPeriod(id);
     setCat(c);
@@ -1309,9 +1307,12 @@ function Reviews({ s, busy, open, run, showModal }: any) {
     <>
       <div className="page-heading">
         <div>
-          <div className="eyebrow">КОНТРОЛЬ ВЫПОЛНЕНИЯ</div>
+          <div className="eyebrow">ДОПОЛНИТЕЛЬНЫЙ КОНТРОЛЬ</div>
           <h1>Проверки документов</h1>
-          <p>Проверяйте вложения и фиксируйте итоги периода.</p>
+          <p>
+            Вложение в журнал завершает документ. Проверка и фиксация итогов
+            периода — по желанию.
+          </p>
         </div>
         {chief && p && (
           <button
@@ -1324,16 +1325,9 @@ function Reviews({ s, busy, open, run, showModal }: any) {
           </button>
         )}
       </div>
-      {missed.length > 0 && (
-        <div className="warning">
-          <AlertCircle size={18} />
-          Не проведено проверок после плановой даты: {missed.length}. Периоды
-          доступны в списке.
-        </div>
-      )}
       <div className="filters">
         <label className="field compact">
-          Проверяемый период
+          Период учёта
           <select
             aria-label="Период"
             value={p?.id || ""}
@@ -1369,11 +1363,11 @@ function Reviews({ s, busy, open, run, showModal }: any) {
         <>
           <div className="review-meta">
             <CalendarDays size={18} />
-            <b>Дата проверки: {fmt(p.end)}</b>
+            <b>Конец периода: {fmt(p.end)}</b>
             <span>
               {records.length
                 ? "Проверка зафиксирована"
-                : "Проверка пока не проведена"}
+                : "Дополнительная проверка не проводилась"}
             </span>
             {p.transition && (
               <span className="demo-pill">Переходный период</span>
@@ -1392,20 +1386,20 @@ function Reviews({ s, busy, open, run, showModal }: any) {
               <label>
                 <input
                   type="checkbox"
-                  aria-label="Выбрать все ожидающие"
+                  aria-label="Выбрать вложенные"
                   checked={
-                    waiting.length > 0 &&
-                    waiting.every((d) => selected.has(d.id))
+                    unconfirmed.length > 0 &&
+                    unconfirmed.every((d) => selected.has(d.id))
                   }
                   onChange={(e) =>
                     setSelected(
                       e.target.checked
-                        ? new Map(waiting.map((d) => [d.id, d.version]))
+                        ? new Map(unconfirmed.map((d) => [d.id, d.version]))
                         : new Map(),
                     )
                   }
                 />
-                Все ожидающие в этой области ({waiting.length})
+                Доступны для проверки ({unconfirmed.length})
               </label>
               <button
                 className="button"
@@ -1685,12 +1679,12 @@ function SettingsView({ s, run, busy, setError }: any) {
         <div>
           <div className="eyebrow">УПРАВЛЕНИЕ ПРИЛОЖЕНИЕМ</div>
           <h1>Настройки</h1>
-          <p>Расписание проверок{admin ? ", участники и категории" : ""}.</p>
+          <p>Периоды учёта{admin ? ", участники и категории" : ""}.</p>
         </div>
       </div>
       <section className="panel">
         <div className="section-title">
-          <h2>Расписание проверок</h2>
+          <h2>Периоды учёта и дополнительных проверок</h2>
           <CalendarDays size={21} />
         </div>
         <p className="muted">

@@ -552,7 +552,7 @@ main {
 }
 .stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 18px;
   margin-bottom: 24px;
 }
@@ -576,6 +576,21 @@ main {
     linear-gradient(125deg, var(--gold-panel), #edc370);
   color: var(--on-gold);
   border-color: #dcb362;
+}
+.stat-working {
+  background:
+    var(--panel-waves) right bottom / 500px 180px no-repeat,
+    linear-gradient(120deg, var(--surface), var(--pale));
+  color: var(--text);
+  border-color: var(--heading-line);
+}
+.stat-working .stat-label,
+.stat-working small {
+  color: var(--text);
+}
+.stat-working .stat-icon {
+  background: var(--gold);
+  color: var(--forest-deep);
 }
 .stat-ready {
   background:
@@ -2016,6 +2031,9 @@ pre {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 13px;
   }
+  .stats > .stat:last-child {
+    grid-column: 1 / -1;
+  }
   .page-heading {
     align-items: flex-start;
   }
@@ -2045,6 +2063,9 @@ pre {
     padding: 10px;
     font-size: 10px;
     line-height: 1.5;
+  }
+  .dashboard-tabs button:last-child {
+    grid-column: 1 / -1;
   }
   .sidebar {
     position: fixed;

@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import {
   LayoutGrid,
   ClipboardCheck,
+  Clock3,
   History,
   Settings,
   Plus,
@@ -318,6 +319,7 @@ function App() {
         .includes(categoryQuery.trim().toLocaleLowerCase("ru")),
     ),
     overdue = docs.filter((d) => d.deadline.kind === "overdue"),
+    working = docs.filter((d) => d.status === "IN_PROGRESS"),
     ready = docs.filter(isReady),
     completed = docs.filter((d) => d.completed),
     attention = docs.filter(
@@ -492,6 +494,17 @@ function App() {
                   }}
                   value={docs.length}
                   foot="Во всех категориях"
+                />
+                <Stat
+                  icon={<Clock3 />}
+                  label="В работе"
+                  onClick={() => {
+                    setDashboardFilter("working");
+                    navigate("dashboard");
+                  }}
+                  value={working.length}
+                  foot="Ожидают выполнения"
+                  kind="working"
                 />
                 <Stat
                   icon={<ClipboardCheck />}

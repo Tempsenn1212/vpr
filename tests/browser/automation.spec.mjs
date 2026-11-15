@@ -189,6 +189,11 @@ test("summary cards open the correct table, filters match state and manual recor
     .documents;
   for (const [label, key, count] of [
     ["Всего документов", "all", docs.length],
+    [
+      "В работе",
+      "working",
+      docs.filter((d) => !d.deleted && d.status === "IN_PROGRESS").length,
+    ],
     ["Документ оформлен", "ready", 1],
     ["Просрочено без вложения", "overdue", 2],
     ["Завершено", "completed", 1],
@@ -207,10 +212,15 @@ test("summary cards open the correct table, filters match state and manual recor
         .getByRole("button", { name: new RegExp(label) }),
     ).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("tbody tr")).toHaveCount(count);
+    if (key === "working") {
+      await expect(page.locator("tbody .badge")).toHaveText(
+        Array(count).fill("В работе"),
+      );
+    }
   }
   await page
     .locator(".dashboard-tabs")
-    .getByRole("button", { name: /Всего документов/ })
+    .getByRole("button", { name: /^В работе/ })
     .click();
   await page
     .getByRole("combobox", { name: "Категория в таблице", exact: true })

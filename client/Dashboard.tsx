@@ -12,7 +12,12 @@ import {
 import { CategorySelect } from "./CategorySelect";
 import { AppSelect } from "./AppSelect";
 import { DocumentStatus } from "./DocumentStatus";
-export type DashboardFilter = "all" | "ready" | "overdue" | "completed";
+export type DashboardFilter =
+  | "all"
+  | "working"
+  | "ready"
+  | "overdue"
+  | "completed";
 export function Dashboard({
   s,
   filter,
@@ -32,11 +37,10 @@ export function Dashboard({
   const all = s.documents.filter((d) => !d.deleted);
   const matches = (d: Doc, f: DashboardFilter) =>
     f === "all" ||
-    (f === "ready"
-      ? isReady(d)
-      : f === "completed"
-        ? d.completed
-        : d.deadline.kind === "overdue");
+    (f === "working" && d.status === "IN_PROGRESS") ||
+    (f === "ready" && isReady(d)) ||
+    (f === "completed" && d.completed) ||
+    (f === "overdue" && d.deadline.kind === "overdue");
   const docs = all
     .filter(
       (d) =>
@@ -58,6 +62,7 @@ export function Dashboard({
     );
   const tabs: [DashboardFilter, string][] = [
     ["all", "Всего документов"],
+    ["working", "В работе"],
     ["ready", readinessTerms({ categoryId: category }).status],
     [
       "overdue",

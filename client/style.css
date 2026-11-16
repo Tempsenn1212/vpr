@@ -293,6 +293,33 @@ nav em {
 .utility button:last-child {
   margin-left: auto;
 }
+.sidebar-unit {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--heading-line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.unit-palette {
+  position: absolute;
+  pointer-events: none;
+}
+.sidebar-unit .unit-logo {
+  width: 24px;
+  height: 30px;
+  filter: url("#unit-logo-light-palette");
+}
+[data-theme="dark"] .sidebar-unit .unit-logo {
+  filter: none;
+}
 main {
   margin-left: 250px;
   min-width: 0;

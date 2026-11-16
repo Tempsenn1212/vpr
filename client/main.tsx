@@ -387,7 +387,29 @@ function App() {
             >
               {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-            <span>{s.timeZone}</span>
+            <span className="sidebar-unit">
+              <svg
+                width="0"
+                height="0"
+                aria-hidden="true"
+                focusable="false"
+                className="unit-palette"
+              >
+                <defs>
+                  <filter
+                    id="unit-logo-light-palette"
+                    colorInterpolationFilters="sRGB"
+                  >
+                    <feColorMatrix
+                      type="matrix"
+                      values="-0.264 -0.887 -0.089 0 1.24 -0.199 -0.668 -0.067 0 1.181 -0.206 -0.692 -0.070 0 1.187 0 0 0 1 0"
+                    />
+                  </filter>
+                </defs>
+              </svg>
+              <UnitLogo />
+              <span>Научная рота</span>
+            </span>
             {login && (
               <button
                 aria-label="Выйти"

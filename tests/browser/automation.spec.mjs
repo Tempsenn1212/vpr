@@ -58,6 +58,193 @@ async function chooseMonth(page, name) {
     .fill(name);
   await page.getByRole("option", { name, exact: true }).click();
 }
+test("two participants discuss a confirmed document without changing its version; deleted cards retain read-only comments", async ({
+  page,
+  browser,
+  recurringApp: app,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const actor = app.store.user("worker-1");
+  const created = app.store.create(actor, {
+    title: "Документ с обсуждением",
+    categoryId: "category-2",
+    dueDate: "2026-11-20",
+  });
+  const original = app.store.action(
+    app.store.user("chief-1"),
+    created.id,
+    "place-confirm",
+    { version: created.version, date: "2026-11-15" },
+  );
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 960 },
+  });
+  const other = await context.newPage();
+  try {
+    await login(page, app);
+    await other.route("https://telegram.org/js/telegram-web-app.js*", (r) =>
+      r.fulfill({ body: "" }),
+    );
+    await other.goto(app.url);
+    await other.getByRole("button", { name: /Иван Петров/ }).click();
+    for (const p of [page, other]) {
+      await p
+        .locator(".category-card")
+        .filter({ hasText: "Планы основных культурно-досуговых мероприятий" })
+        .click();
+      await p
+        .locator(".document-row")
+        .getByRole("button", { name: /Документ с обсуждением/ })
+        .click();
+    }
+    const draft = page.getByRole("textbox", {
+      name: "Новый комментарий",
+      exact: true,
+    });
+    const otherDraft = other.getByRole("textbox", {
+      name: "Новый комментарий",
+      exact: true,
+    });
+    await draft.fill("Ожидает уточнения\nВторая строка");
+    await otherDraft.fill("Черновик второго участника");
+    await page
+      .getByRole("button", { name: "Добавить комментарий", exact: true })
+      .click();
+    await expect(page.locator(".comment-card")).toHaveCount(1);
+    await expect(draft).toHaveValue("");
+    await expect(page.locator(".comment-card .comment-meta b")).toHaveText(
+      "Анна Смирнова",
+    );
+    await expect(page.locator(".comment-card time")).toContainText("15:00");
+    await expect(other.locator(".comment-card")).toHaveCount(1, {
+      timeout: 5000,
+    });
+    await expect(otherDraft).toHaveValue("Черновик второго участника");
+    await other
+      .getByRole("button", { name: "Добавить комментарий", exact: true })
+      .click();
+    await expect(page.locator(".comment-card")).toHaveCount(2, {
+      timeout: 5000,
+    });
+    await expect(page.locator(".comment-meta b")).toHaveText([
+      "Анна Смирнова",
+      "Иван Петров",
+    ]);
+    await expect(page.getByRole("dialog").locator(".badge")).toHaveText(
+      "Вложение подтверждено",
+    );
+    expect(app.store.document(original.id)).toEqual(original);
+    await page
+      .getByRole("button", { name: "Закрыть окно", exact: true })
+      .click();
+    await expect(page.locator(".document-row .comment-count")).toHaveText(
+      "Комментарии: 2",
+    );
+    await page
+      .locator("nav")
+      .getByRole("button", { name: "История", exact: true })
+      .click();
+    await page
+      .getByRole("combobox", { name: "Тип события", exact: true })
+      .click();
+    await page
+      .getByRole("option", { name: "Комментарий добавлен", exact: true })
+      .click();
+    await expect(page.locator(".audit-event")).toHaveCount(2);
+    await expect(page.locator(".audit-comment")).toHaveText([
+      "Черновик второго участника",
+      "Ожидает уточнения\nВторая строка",
+    ]);
+    await page
+      .locator(".audit-event")
+      .getByRole("button", { name: "Документ с обсуждением", exact: true })
+      .first()
+      .click();
+    await page.getByRole("button", { name: "Удалить", exact: true }).click();
+    await page.getByRole("dialog").getByRole("checkbox").check();
+    await page
+      .getByRole("button", { name: "Удалить карточку", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).not.toBeVisible();
+    await page
+      .locator(".audit-event")
+      .getByRole("button", { name: /Документ с обсуждением/ })
+      .first()
+      .click();
+    await expect(page.locator(".comment-card")).toHaveCount(2);
+    await expect(
+      page.getByRole("textbox", { name: "Новый комментарий", exact: true }),
+    ).toHaveCount(0);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > innerWidth,
+      ),
+    ).toBe(false);
+  } finally {
+    await context.close();
+  }
+});
+test("comment draft survives network failure and is rendered as plain text after retry", async ({
+  page,
+  recurringApp: app,
+}) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  const doc = app.store.create(app.store.user("worker-1"), {
+    title: "Проверка комментариев",
+    categoryId: "category-2",
+    dueDate: "2026-11-20",
+  });
+  await login(page, app);
+  await page
+    .locator(".category-card")
+    .filter({ hasText: "Планы основных культурно-досуговых мероприятий" })
+    .click();
+  await page
+    .locator(".document-row")
+    .getByRole("button", { name: /Проверка комментариев/ })
+    .click();
+  const draft = page.getByRole("textbox", {
+    name: "Новый комментарий",
+    exact: true,
+  });
+  const send = page.getByRole("button", {
+    name: "Добавить комментарий",
+    exact: true,
+  });
+  await expect(send).toBeDisabled();
+  await draft.fill(" \n  ");
+  await expect(send).toBeDisabled();
+  await expect(draft).toHaveAttribute("maxlength", "2000");
+  const text =
+    '<img src=x onerror="window.commentInjected=true">\n' +
+    "ДлинноеПояснение".repeat(30);
+  await draft.fill(text);
+  await page.route(
+    "**/api/documents/*/comments",
+    (route) => route.abort("failed"),
+    { times: 1 },
+  );
+  await send.click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Нет связи с сервером",
+  );
+  await expect(draft).toHaveValue(text);
+  await expect(page.locator(".comment-card")).toHaveCount(0);
+  expect(app.store.comments()).toHaveLength(0);
+  await send.click();
+  await expect(page.locator(".comment-card")).toHaveCount(1);
+  await expect(draft).toHaveValue("");
+  await expect(page.locator(".comment-text")).toHaveText(text);
+  await expect(page.locator(".comments-list img")).toHaveCount(0);
+  expect(await page.evaluate(() => window.commentInjected)).toBeUndefined();
+  expect(app.store.document(doc.id)).toEqual(doc);
+  expect(app.store.comments()).toHaveLength(1);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+  ).toBe(false);
+});
 function monthDocuments(app) {
   const actor = app.store.user("worker-1");
   const create = (title, dueDate, extra = {}) =>

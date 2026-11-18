@@ -13,6 +13,7 @@ import { CategorySelect } from "./CategorySelect";
 import { AppSelect } from "./AppSelect";
 import { DocumentStatus } from "./DocumentStatus";
 import { inMonth } from "./months";
+import { CommentCount } from "./Comments";
 export type DashboardFilter =
   | "all"
   | "working"
@@ -193,6 +194,7 @@ export function Dashboard({
                     </small>
                   )}
                   {d.recurring && <small>По расписанию</small>}
+                  <CommentCount s={s} documentId={d.id} />
                 </td>
                 <td>{s.categories.find((c) => c.id === d.categoryId)?.name}</td>
                 <td>

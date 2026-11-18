@@ -66,11 +66,21 @@ export type Audit = {
   batch_id?: string;
   data: any;
 };
+export type DocumentComment = {
+  id: string;
+  seq: number;
+  documentId: string;
+  authorId: string;
+  authorName: string;
+  at: string;
+  text: string;
+};
 export type State = {
   me: User;
   today: string;
   timeZone: string;
   documents: Doc[];
+  comments: DocumentComment[];
   categories: Category[];
   users: User[];
   periods: Period[];
@@ -178,6 +188,7 @@ export const events: Record<string, string> = {
   CATEGORY: "Категория изменена",
   SUBDOCUMENT: "Лист беседы изменён",
   SUBDOCUMENTS: "Все листы беседы отмечены",
+  COMMENT: "Комментарий добавлен",
   RENAME: "Название приведено к обычному регистру",
   RECURRENCE: "Расписание документов изменено",
 };

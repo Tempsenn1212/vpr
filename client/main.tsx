@@ -49,6 +49,7 @@ import { AppSelect } from "./AppSelect";
 import { DocumentStatus as Badge } from "./DocumentStatus";
 import { MonthSelect } from "./MonthSelect";
 import { inMonth, monthLabel } from "./months";
+import { Comments, CommentCount } from "./Comments";
 import "./style.css";
 declare global {
   interface Window {
@@ -962,6 +963,7 @@ function DocumentList({
             </span>
             <span className="doc-main">
               <b>{d.title}</b>
+              <CommentCount s={s} documentId={d.id} />
               {d.topic && (
                 <small className="document-topic">Тема: {d.topic}</small>
               )}
@@ -1479,6 +1481,7 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
           </div>
         </>
       )}
+      <Comments key={d.id} doc={d} s={s} busy={busy} run={run} />
       <h3>История карточки</h3>
       <AuditList
         eventsList={s.audit.filter((e: Audit) => e.document_id === d.id)}
@@ -1857,6 +1860,9 @@ function AuditList({
                 {e.actor_name} · {stamp(e.at, s.timeZone)}
               </small>
               {e.data.reason && <p>Причина: {e.data.reason}</p>}
+              {e.type === "COMMENT" && e.data.comment && (
+                <p className="audit-comment">{e.data.comment.text}</p>
+              )}
               {e.batch_id && <small>Общая операция: {e.batch_id}</small>}
               {before && after && (
                 <div className="diff">

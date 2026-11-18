@@ -7,6 +7,72 @@ import { join } from "node:path";
 import { createApp } from "../server/app.mjs";
 import { initDb, openDb } from "../server/db.mjs";
 import { Store } from "../server/store.mjs";
+import { randomUUID } from "node:crypto";
+
+test("v5 comments migration preserves documents and snapshots and discussions survive reopening", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "vpr-comments-v5-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const path = join(dir, "comments.sqlite");
+  let db = new DatabaseSync(path);
+  for (const file of [
+    "001_initial.sql",
+    "002_document_categories.sql",
+    "003_recurring_documents.sql",
+    "004_gdp_report.sql",
+    "005_plan_titles.sql",
+  ])
+    db.exec(
+      readFileSync(
+        new URL(`../server/migrations/${file}`, import.meta.url),
+        "utf8",
+      ),
+    );
+  initDb(db, { demo: true, production: false });
+  let store = new Store(db, { clock: () => new Date("2026-11-27T12:00:00Z") });
+  const actor = store.user("worker-1");
+  const d = store.create(actor, {
+    title: "Документ до комментариев",
+    categoryId: "category-9",
+    dueDate: "2026-11-27",
+  });
+  store.review(store.user("chief-1"), { periodId: store.periodList()[0].id });
+  const documents = db.prepare("SELECT * FROM documents").all(),
+    audit = db.prepare("SELECT * FROM audit_events ORDER BY seq").all(),
+    reviews = db.prepare("SELECT * FROM review_records").all();
+  db.close();
+  db = openDb(path);
+  store = new Store(db, { clock: () => new Date("2026-11-27T12:00:00Z") });
+  assert.deepEqual(db.prepare("SELECT * FROM documents").all(), documents);
+  assert.deepEqual(
+    db.prepare("SELECT * FROM audit_events ORDER BY seq").all(),
+    audit,
+  );
+  assert.deepEqual(db.prepare("SELECT * FROM review_records").all(), reviews);
+  assert.deepEqual(store.comments(), []);
+  const comment = store.mutate(
+    actor,
+    randomUUID(),
+    "POST /comments",
+    { text: "Сохранённое пояснение" },
+    (a) => store.addComment(a, d.id, { text: "Сохранённое пояснение" }),
+  );
+  db.close();
+  db = openDb(path);
+  try {
+    store = new Store(db);
+    assert.deepEqual(store.comments(), [comment]);
+    assert.deepEqual(db.prepare("SELECT * FROM documents").all(), documents);
+    assert.deepEqual(db.prepare("SELECT * FROM review_records").all(), reviews);
+    assert.equal(
+      store.state(actor).audit.filter((e) => e.type === "COMMENT").length,
+      1,
+    );
+    assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
+  } finally {
+    db.close();
+  }
+});
 
 test("v3 upgrade adds the GDP rule immediately and preserves the checkpoint for catch-up", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "vpr-gdp-upgrade-"));
@@ -269,7 +335,7 @@ test("v4 plan headings migrate once with audit and preserve facts, custom names,
       db.prepare("SELECT * FROM audit_events ORDER BY seq").all(),
       audit,
     );
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 5);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
   } finally {
     db.close();
   }
@@ -316,7 +382,7 @@ test("new demo and production databases contain the twelve ordered document cate
       assert.equal(categories[10].name, "Боевые листки");
       assert.equal(categories[11].name, "Рапорт ГДП");
       assert(categories.every((c) => !c.hidden));
-      assert.equal(db.prepare("PRAGMA user_version").get().user_version, 5);
+      assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
     } finally {
       db.close();
     }

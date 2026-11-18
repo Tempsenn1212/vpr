@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { createApp } from "../server/app.mjs";
 test("20: online backup includes WAL and restores data, audit and administrator", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "vpr-backup-"));
@@ -23,6 +24,16 @@ test("20: online backup includes WAL and restores data, audit and administrator"
     dueDate: "2026-11-27",
     categoryId: "category-1",
   });
+  const comment = first.store.mutate(
+    actor,
+    randomUUID(),
+    "backup-comment",
+    {},
+    (user) =>
+      first.store.addComment(user, document.id, {
+        text: "Комментарий в резервной копии",
+      }),
+  );
   execFileSync(process.execPath, ["scripts/backup.mjs", destination], {
     env: { ...process.env, DATABASE_PATH: source },
   });
@@ -36,7 +47,9 @@ test("20: online backup includes WAL and restores data, audit and administrator"
   });
   assert.equal(restored.store.document(document.id).title, "Копия из WAL");
   assert.equal(restored.store.user("worker-1").admin, true);
-  assert.equal(restored.store.state(actor).audit.length, 1);
+  assert.equal(restored.store.state(actor).audit.length, 2);
+  assert.deepEqual(restored.store.comments(), [comment]);
+  assert.equal(restored.store.document(document.id).version, document.version);
   restored.db.close();
   assert.throws(
     () =>

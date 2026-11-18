@@ -583,6 +583,67 @@ main {
   gap: 18px;
   margin-bottom: 24px;
 }
+.month-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px 24px;
+  padding: 16px;
+  margin-bottom: 22px;
+  border: 1px solid var(--heading-line);
+  border-left: 3px solid #bc934e;
+  border-radius: 12px;
+  background: var(--surface);
+}
+.month-field {
+  flex: 1 1 260px;
+  min-width: 0;
+  max-width: 460px;
+}
+.month-field > .eyebrow {
+  display: block;
+  margin-bottom: 8px;
+}
+.month-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.month-controls > .category-select {
+  flex: 1;
+}
+.month-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 44px;
+  border: 1px solid var(--heading-line);
+  border-radius: 9px;
+  color: var(--primary);
+  background: var(--pale);
+}
+.month-explanation {
+  display: flex;
+  flex: 1 1 260px;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.month-explanation p {
+  flex: 1;
+  min-width: 120px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.month-explanation .button {
+  padding: 10px 12px;
+  font-size: 11px;
+}
 .stat {
   text-align: left;
   min-width: 0;
@@ -612,7 +673,7 @@ main {
   border-color: var(--heading-line);
 }
 .stat-working .stat-label,
-.stat-working small {
+.stat.stat-working small {
   color: var(--text);
 }
 .stat-working .stat-icon {

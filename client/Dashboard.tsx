@@ -12,6 +12,7 @@ import {
 import { CategorySelect } from "./CategorySelect";
 import { AppSelect } from "./AppSelect";
 import { DocumentStatus } from "./DocumentStatus";
+import { inMonth } from "./months";
 export type DashboardFilter =
   | "all"
   | "working"
@@ -20,12 +21,14 @@ export type DashboardFilter =
   | "completed";
 export function Dashboard({
   s,
+  month,
   filter,
   setFilter,
   open,
   create,
 }: {
   s: State;
+  month: string;
   filter: DashboardFilter;
   setFilter: (f: DashboardFilter) => void;
   open: (d: Doc) => void;
@@ -34,7 +37,7 @@ export function Dashboard({
   const [query, setQuery] = useState(""),
     [category, setCategory] = useState(""),
     [sort, setSort] = useState("due");
-  const all = s.documents.filter((d) => !d.deleted);
+  const all = s.documents.filter((d) => !d.deleted && inMonth(d, month));
   const matches = (d: Doc, f: DashboardFilter) =>
     f === "all" ||
     (f === "working" && d.status === "IN_PROGRESS") ||

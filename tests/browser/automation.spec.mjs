@@ -25,7 +25,7 @@ const test = base.extend({
     }
   },
 });
-async function login(page, app) {
+async function login(page, app, allMonths = true) {
   await page.route("https://telegram.org/js/telegram-web-app.js*", (r) =>
     r.fulfill({ contentType: "application/javascript", body: "" }),
   );
@@ -34,6 +34,12 @@ async function login(page, app) {
   await expect(
     page.getByRole("heading", { name: "Обзор документации" }),
   ).toBeVisible();
+  if (allMonths) {
+    await page
+      .getByRole("combobox", { name: "Месяц документов", exact: true })
+      .click();
+    await page.getByRole("option", { name: "Все месяцы", exact: true }).click();
+  }
 }
 async function mutate(page, app, path, body, method = "post") {
   const response = await page.request[method](app.url + "/api" + path, {
@@ -43,6 +49,261 @@ async function mutate(page, app, path, body, method = "post") {
   expect(response.status()).toBe(200);
   return response.json();
 }
+async function chooseMonth(page, name) {
+  await page
+    .getByRole("combobox", { name: "Месяц документов", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Поиск: Месяц документов", exact: true })
+    .fill(name);
+  await page.getByRole("option", { name, exact: true }).click();
+}
+function monthDocuments(app) {
+  const actor = app.store.user("worker-1");
+  const create = (title, dueDate, extra = {}) =>
+    app.store.create(actor, {
+      title,
+      dueDate,
+      categoryId: "category-2",
+      ...extra,
+    });
+  const october = create("Октябрьский документ", "2026-10-31");
+  app.store.action(actor, october.id, "place", {
+    version: october.version,
+    date: "2026-11-06",
+  });
+  create("Ноябрь в работе", "2026-11-30");
+  const ready = create("Ноябрь оформлен", "2026-11-30", {
+    readyDueDate: "2026-11-25",
+  });
+  app.store.action(actor, ready.id, "ready", {
+    version: ready.version,
+    date: "2026-11-13",
+  });
+  const done = create("Ноябрь завершён", "2026-11-01");
+  app.store.action(actor, done.id, "place", {
+    version: done.version,
+    date: "2026-11-14",
+  });
+  create("Декабрьский документ", "2026-12-01", { readyDueDate: "2026-11-25" });
+  create("Високосный февраль", "2028-02-29");
+  const deleted = create("Удалённый старый документ", "2025-05-01");
+  app.store.remove(actor, deleted.id, {
+    version: deleted.version,
+    confirmed: true,
+  });
+  return app.store.state(actor);
+}
+test("month selection scopes every summary, category and table by deadline and preserves stored facts", async ({
+  page,
+  recurringApp: app,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const state = monthDocuments(app),
+    before = app.store.documents();
+  const current = state.documents.filter(
+    (d) => !d.deleted && d.dueDate.startsWith("2026-11"),
+  );
+  await login(page, app, false);
+  const month = page.getByRole("combobox", {
+    name: "Месяц документов",
+    exact: true,
+  });
+  await expect(month).toContainText("Ноябрь 2026");
+  for (const [kind, count] of [
+    ["primary", current.length],
+    ["working", current.filter((d) => d.status === "IN_PROGRESS").length],
+    ["ready", 1],
+    ["red", current.filter((d) => d.deadline.kind === "overdue").length],
+    ["amber", 1],
+  ])
+    await expect(page.locator(`.stat-${kind} strong`)).toHaveText(
+      String(count),
+    );
+  const category = () =>
+    page
+      .locator(".category-card")
+      .filter({ hasText: "Планы основных культурно-досуговых мероприятий" });
+  await expect(category()).toContainText("Документов: 3");
+  await page.locator(".stat-amber").click();
+  await expect(page.locator("tbody .table-title")).toHaveText([
+    "Ноябрь завершён",
+  ]);
+  await page.locator(".tab-all").click();
+  await expect(page.locator("tbody tr")).toHaveCount(current.length);
+  await chooseMonth(page, "Октябрь 2026");
+  await expect(page.locator("tbody .table-title")).toHaveText([
+    "Октябрьский документ",
+  ]);
+  await page
+    .getByRole("button", { name: "Октябрьский документ", exact: true })
+    .click();
+  await expect(page.getByRole("dialog").locator(".marks")).toContainText(
+    "6 нояб. 2026",
+  );
+  await page.getByRole("button", { name: "Закрыть окно", exact: true }).click();
+  const home = () =>
+    page
+      .locator("nav")
+      .getByRole("button", { name: "Обзор", exact: true })
+      .click();
+  await home();
+  await expect(month).toContainText("Октябрь 2026");
+  await expect(page.locator(".stat-primary strong")).toHaveText("1");
+  await expect(page.locator(".stat-amber strong")).toHaveText("1");
+  await expect(category()).toContainText("Документов: 1");
+  await category().click();
+  await expect(page.locator(".document-row .doc-main b")).toHaveText([
+    "Октябрьский документ",
+  ]);
+  await chooseMonth(page, "Декабрь 2026");
+  await expect(page.locator(".document-row .doc-main b")).toHaveText([
+    "Декабрьский документ",
+  ]);
+  await page
+    .getByRole("button", { name: "Следующий месяц", exact: true })
+    .click();
+  await expect(month).toContainText("Январь 2027");
+  await expect(page.locator(".document-row")).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Текущий месяц", exact: true })
+    .click();
+  await expect(month).toContainText("Ноябрь 2026");
+  await expect(page.locator(".document-row")).toHaveCount(3);
+  await chooseMonth(page, "Все месяцы");
+  await expect(page.locator(".document-row")).toHaveCount(6);
+  await home();
+  await expect(page.locator(".stat-primary strong")).toHaveText(
+    String(state.documents.filter((d) => !d.deleted).length),
+  );
+  await chooseMonth(page, "Ноябрь 2026");
+  await page
+    .locator(".category-card")
+    .filter({ hasText: "Журналы индивидуальной работы" })
+    .click();
+  await expect(page.locator(".document-row")).toHaveCount(1);
+  await page
+    .locator("nav")
+    .getByRole("button", { name: "История", exact: true })
+    .click();
+  await expect(month).toHaveCount(0);
+  await expect(page.locator(".audit-list")).toContainText(
+    "Октябрьский документ",
+  );
+  await home();
+  await expect(month).toContainText("Ноябрь 2026");
+  expect(app.store.documents()).toEqual(before);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+  ).toBe(false);
+});
+test("empty and distant months remain selectable, and saved cards open their deadline month", async ({
+  page,
+  recurringApp: app,
+}) => {
+  monthDocuments(app);
+  await login(page, app, false);
+  const month = page.getByRole("combobox", {
+    name: "Месяц документов",
+    exact: true,
+  });
+  await chooseMonth(page, "Февраль 2028");
+  await expect(page.locator(".stat-primary strong")).toHaveText("1");
+  await page
+    .getByRole("button", { name: "Следующий месяц", exact: true })
+    .click();
+  await expect(month).toContainText("Март 2028");
+  await expect(page.locator(".stat-primary strong")).toHaveText("0");
+  await page
+    .locator(".category-card")
+    .filter({ hasText: "Планы основных культурно-досуговых мероприятий" })
+    .click();
+  await expect(page.locator(".document-row")).toHaveCount(0);
+  const saveNew = async (title, due) => {
+    await page
+      .getByRole("button", { name: "Создать документ", exact: true })
+      .click();
+    await page.getByLabel("Название", { exact: true }).fill(title);
+    await page.getByLabel("Срок предоставления").fill(due);
+    await page
+      .getByRole("button", { name: "Сохранить документ", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).not.toBeVisible();
+  };
+  await saveNew("Карточка другого месяца", "2030-01-10");
+  await expect(month).toContainText("Январь 2030");
+  await expect(page.locator(".document-row .doc-main b")).toHaveText([
+    "Карточка другого месяца",
+  ]);
+  await page.locator(".document-row").getByRole("button").click();
+  await page
+    .getByRole("button", { name: "Редактировать", exact: true })
+    .click();
+  await page.getByLabel("Срок предоставления").fill("2030-02-10");
+  await page
+    .getByRole("button", { name: "Сохранить документ", exact: true })
+    .click();
+  await expect(month).toContainText("Февраль 2030");
+  await expect(page.locator(".document-row .doc-main b")).toHaveText([
+    "Карточка другого месяца",
+  ]);
+  await page
+    .getByRole("button", { name: "Предыдущий месяц", exact: true })
+    .click();
+  await expect(month).toContainText("Январь 2030");
+  await expect(page.locator(".document-row")).toHaveCount(0);
+  await chooseMonth(page, "Все месяцы");
+  await saveNew("Карточка в общем списке", "2031-01-10");
+  await expect(month).toContainText("Все месяцы");
+  await expect(
+    page
+      .locator(".document-row")
+      .filter({ hasText: "Карточка в общем списке" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Текущий месяц", exact: true })
+    .click();
+  await expect(month).toContainText("Ноябрь 2026");
+  expect(
+    await page.evaluate(() => ({
+      local: localStorage.length,
+      session: sessionStorage.length,
+    })),
+  ).toEqual({ local: 0, session: 0 });
+});
+test("default month follows Moscow midnight while explicit periods survive refresh and reset on login", async ({
+  page,
+  recurringApp: app,
+}) => {
+  app.store.clock = () => new Date("2026-11-30T20:59:00Z");
+  await login(page, app, false);
+  const month = page.getByRole("combobox", {
+    name: "Месяц документов",
+    exact: true,
+  });
+  await expect(month).toContainText("Ноябрь 2026");
+  app.store.clock = () => new Date("2026-11-30T21:00:00Z");
+  await expect(month).toContainText("Декабрь 2026");
+  await chooseMonth(page, "Ноябрь 2026");
+  app.store.clock = () => new Date("2026-12-31T21:00:00Z");
+  await expect(page.locator(".topbar-meta time")).toContainText("1 янв. 2027");
+  await expect(month).toContainText("Ноябрь 2026");
+  await page
+    .getByRole("button", { name: "Текущий месяц", exact: true })
+    .click();
+  await expect(month).toContainText("Январь 2027");
+  await chooseMonth(page, "Все месяцы");
+  app.store.clock = () => new Date("2027-01-31T21:00:00Z");
+  await expect(page.locator(".topbar-meta time")).toContainText("1 февр. 2027");
+  await expect(month).toContainText("Все месяцы");
+  await page
+    .getByRole("button", { name: "Сменить аккаунт", exact: true })
+    .click();
+  await page.getByRole("button", { name: /Анна Смирнова/ }).click();
+  await expect(month).toContainText("Февраль 2027");
+});
 test("branded category picker preserves a draft, supports keyboard search and selects the GDP category", async ({
   page,
   recurringApp: app,

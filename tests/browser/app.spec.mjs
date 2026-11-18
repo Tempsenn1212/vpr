@@ -5,6 +5,10 @@ const login = async (page, name = "Анна Смирнова") => {
   await expect(
     page.getByRole("heading", { name: "Обзор документации" }),
   ).toBeVisible();
+  await page
+    .getByRole("combobox", { name: "Месяц документов", exact: true })
+    .click();
+  await page.getByRole("option", { name: "Все месяцы", exact: true }).click();
 };
 async function createUI(page, title, dueDate = "2026-11-27") {
   await page.getByRole("button", { name: "Создать документ" }).click();

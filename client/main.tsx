@@ -47,6 +47,8 @@ import { RecurringPanel, Subdocuments, ruleDescription } from "./Recurring";
 import { CategorySelect } from "./CategorySelect";
 import { AppSelect } from "./AppSelect";
 import { DocumentStatus as Badge } from "./DocumentStatus";
+import { MonthSelect } from "./MonthSelect";
+import { inMonth, monthLabel } from "./months";
 import "./style.css";
 declare global {
   interface Window {
@@ -75,6 +77,7 @@ function App() {
     [view, setView] = useState("home"),
     [category, setCategory] = useState(""),
     [categoryQuery, setCategoryQuery] = useState(""),
+    [monthSelection, setMonthSelection] = useState("current"),
     [dashboardFilter, setDashboardFilter] = useState<DashboardFilter>("all"),
     [modal, setModal] = useState<any>(null),
     [notice, setNotice] = useState(""),
@@ -242,6 +245,7 @@ function App() {
       await api("/auth/logout", {}, "POST", false);
       setSessionToken(null);
       setData(null);
+      setMonthSelection("current");
       setDenied(message);
     } catch (e) {
       authenticated.current = true;
@@ -311,7 +315,9 @@ function App() {
   const s = data,
     me = s.me,
     chief = me.role === "CHIEF",
-    docs = s.documents.filter((d) => !d.deleted),
+    selectedMonth =
+      monthSelection === "current" ? s.today.slice(0, 7) : monthSelection,
+    docs = s.documents.filter((d) => !d.deleted && inMonth(d, selectedMonth)),
     visibleCats = s.categories.filter((c) => !c.hidden),
     matchingCats = visibleCats.filter((c) =>
       c.name
@@ -484,6 +490,15 @@ function App() {
           </div>
         )}
         <div className="content">
+          {["home", "dashboard", "category"].includes(view) && (
+            <MonthSelect
+              documents={s.documents}
+              today={s.today}
+              value={selectedMonth}
+              onChange={setMonthSelection}
+              reset={() => setMonthSelection("current")}
+            />
+          )}
           {view === "home" && (
             <>
               <div className="page-heading">
@@ -568,7 +583,7 @@ function App() {
                     <CalendarDays size={25} />
                   </div>
                   <div>
-                    <span className="eyebrow">ПЕРИОД УЧЁТА</span>
+                    <span className="eyebrow">ТЕКУЩИЙ ПЕРИОД УЧЁТА</span>
                     <h3>{fmt(next.end)}</h3>
                     <p>
                       Документы со сроком {fmt(next.start)} — {fmt(next.end)}
@@ -679,6 +694,7 @@ function App() {
           {view === "dashboard" && (
             <Dashboard
               s={s}
+              month={selectedMonth}
               filter={dashboardFilter}
               setFilter={setDashboardFilter}
               open={openDoc}
@@ -689,6 +705,7 @@ function App() {
             <CategoryView
               s={s}
               id={category}
+              month={selectedMonth}
               onOpen={openDoc}
               onCreate={() => form(undefined, false, category)}
               back={() => navigate("home")}
@@ -753,16 +770,29 @@ function App() {
                 reload={() =>
                   setModal({ ...modal, doc: modal.conflict, conflict: null })
                 }
-                submit={(b: any) =>
-                  run(
+                submit={async (b: any) => {
+                  const saved = await run(
                     modal.doc && !modal.copy
                       ? "/documents/" + modal.doc.id
                       : "/documents",
                     b,
                     modal.doc && !modal.copy ? "PATCH" : "POST",
                     "Карточка сохранена",
-                  )
-                }
+                  );
+                  if (
+                    saved &&
+                    selectedMonth &&
+                    !inMonth(saved, selectedMonth) &&
+                    ["home", "dashboard", "category"].includes(view)
+                  ) {
+                    const month = saved.dueDate.slice(0, 7);
+                    setMonthSelection(month);
+                    setNotice(
+                      `Карточка сохранена. Открыт месяц: ${monthLabel(month)}.`,
+                    );
+                  }
+                  return saved;
+                }}
               />
             )}
             {modal.type === "doc" && (
@@ -978,7 +1008,7 @@ function DocumentList({
     </div>
   );
 }
-function CategoryView({ s, id, onOpen, onCreate, back }: any) {
+function CategoryView({ s, id, month, onOpen, onCreate, back }: any) {
   const [query, setQuery] = useState(""),
     [status, setStatus] = useState(""),
     [due, setDue] = useState("");
@@ -986,6 +1016,7 @@ function CategoryView({ s, id, onOpen, onCreate, back }: any) {
   const docs = s.documents.filter(
     (d: Doc) =>
       !d.deleted &&
+      inMonth(d, month) &&
       d.categoryId === id &&
       `${d.title} ${d.topic || ""}`
         .toLocaleLowerCase("ru")

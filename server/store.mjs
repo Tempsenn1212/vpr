@@ -60,41 +60,6 @@ export class Store {
     demand(row, "Карточка не найдена", 404);
     return JSON.parse(row.data);
   }
-  comments() {
-    return this.db
-      .prepare(
-        "SELECT seq,id,document_id AS documentId,author_id AS authorId,author_name AS authorName,at,text FROM document_comments ORDER BY seq",
-      )
-      .all()
-      .map((row) => ({ ...row }));
-  }
-  addComment(actor, id, b) {
-    const doc = this.document(id);
-    demand(
-      !doc.deleted,
-      "Карточка удалена. Добавление комментариев недоступно",
-      409,
-    );
-    const comment = {
-      id: randomUUID(),
-      documentId: id,
-      authorId: actor.id,
-      authorName: actor.name,
-      at: this.now(),
-      text: text(b?.text, "Комментарий", 2000),
-    };
-    const row = this.db
-      .prepare(
-        "INSERT INTO document_comments(id,document_id,author_id,author_name,at,text) VALUES(?,?,?,?,?,?)",
-      )
-      .run(comment.id, id, actor.id, actor.name, comment.at, comment.text);
-    const result = { seq: Number(row.lastInsertRowid), ...comment };
-    this.audit(actor, "COMMENT", id, {
-      comment: result,
-      documentTitle: doc.title,
-    });
-    return result;
-  }
   category(id, allowHidden = false) {
     const c = this.categories().find((c) => c.id === id);
     demand(c && (allowHidden || !c.hidden), "Категория недоступна");
@@ -799,7 +764,6 @@ export class Store {
       today: this.day(),
       timeZone: this.zone,
       documents: docs,
-      comments: this.comments(),
       categories: this.categories(),
       users: this.users().map((u) =>
         actor.admin

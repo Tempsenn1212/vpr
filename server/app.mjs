@@ -147,9 +147,6 @@ export function createApp(options = {}) {
       ),
     );
   mutation("/api/documents", (a, b) => store.create(a, b));
-  mutation("/api/documents/:id/comments", (a, b, p) =>
-    store.addComment(a, p.id, b),
-  );
   mutation("/api/documents/:id/items/complete", (a, b, p) =>
     store.completeItems(a, p.id, b),
   );

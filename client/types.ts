@@ -178,6 +178,7 @@ export const events: Record<string, string> = {
   CATEGORY: "Категория изменена",
   SUBDOCUMENT: "Лист беседы изменён",
   SUBDOCUMENTS: "Все листы беседы отмечены",
+  COMMENT: "Комментарий добавлен",
   RENAME: "Название приведено к обычному регистру",
   RECURRENCE: "Расписание документов изменено",
 };

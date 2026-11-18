@@ -8,6 +8,54 @@ import { createApp } from "../server/app.mjs";
 import { initDb, openDb } from "../server/db.mjs";
 import { Store } from "../server/store.mjs";
 
+test("application without comment entry remains compatible with a v6 database and preserves legacy discussion data", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "vpr-legacy-comments-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const path = join(dir, "existing.sqlite");
+  let db = openDb(path);
+  initDb(db, { demo: true, production: false });
+  let store = new Store(db);
+  const actor = store.user("worker-1");
+  const doc = store.create(actor, {
+    title: "Существующий документ",
+    categoryId: "category-2",
+    dueDate: "2026-11-30",
+  });
+  db.prepare(
+    "INSERT INTO document_comments(id,document_id,author_id,author_name,at,text) VALUES(?,?,?,?,?,?)",
+  ).run(
+    "legacy-comment",
+    doc.id,
+    actor.id,
+    actor.name,
+    "2026-11-18T12:00:00.000Z",
+    "Сохранённое пояснение",
+  );
+  const previous = db.prepare("SELECT * FROM document_comments").all();
+  db.close();
+  db = openDb(path);
+  try {
+    store = new Store(db);
+    assert.deepEqual(store.document(doc.id), doc);
+    assert.equal(store.state(actor).documents.length, 1);
+    const updated = store.edit(actor, doc.id, {
+      version: doc.version,
+      title: "Новое название",
+      categoryId: doc.categoryId,
+      dueDate: doc.dueDate,
+    });
+    assert.equal(updated.version, doc.version + 1);
+    assert.deepEqual(
+      db.prepare("SELECT * FROM document_comments").all(),
+      previous,
+    );
+    assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
+  } finally {
+    db.close();
+  }
+});
+
 test("v3 upgrade adds the GDP rule immediately and preserves the checkpoint for catch-up", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "vpr-gdp-upgrade-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -269,7 +317,7 @@ test("v4 plan headings migrate once with audit and preserve facts, custom names,
       db.prepare("SELECT * FROM audit_events ORDER BY seq").all(),
       audit,
     );
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 5);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
   } finally {
     db.close();
   }
@@ -316,7 +364,7 @@ test("new demo and production databases contain the twelve ordered document cate
       assert.equal(categories[10].name, "Боевые листки");
       assert.equal(categories[11].name, "Рапорт ГДП");
       assert(categories.every((c) => !c.hidden));
-      assert.equal(db.prepare("PRAGMA user_version").get().user_version, 5);
+      assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
     } finally {
       db.close();
     }

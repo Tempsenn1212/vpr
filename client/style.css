@@ -1652,6 +1652,10 @@ main {
   margin: 9px 0 0;
   overflow-wrap: anywhere;
 }
+.audit-comment {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .diff del {
   color: var(--muted);
 }

@@ -43,7 +43,7 @@ import {
 } from "./types";
 import { api, ApiError, setSessionToken } from "./api";
 import { Dashboard, type DashboardFilter } from "./Dashboard";
-import { RecurringPanel, Subdocuments, ruleDescription } from "./Recurring";
+import { RecurringPanel, Subdocuments } from "./Recurring";
 import { CategorySelect } from "./CategorySelect";
 import { AppSelect } from "./AppSelect";
 import { DocumentStatus as Badge } from "./DocumentStatus";
@@ -1041,13 +1041,6 @@ function CategoryView({ s, id, month, onOpen, onCreate, back }: any) {
           Создать документ
         </button>
       </div>
-      {s.recurringRules
-        ?.filter((r: any) => r.category_id === id && r.enabled)
-        .map((r: any) => (
-          <p className="recurring-caption" key={r.id}>
-            {ruleDescription(r)}
-          </p>
-        ))}
       <div className="filters">
         <label className="search">
           <Search size={18} />
@@ -1857,6 +1850,9 @@ function AuditList({
                 {e.actor_name} · {stamp(e.at, s.timeZone)}
               </small>
               {e.data.reason && <p>Причина: {e.data.reason}</p>}
+              {e.type === "COMMENT" && e.data.comment && (
+                <p className="audit-comment">{e.data.comment.text}</p>
+              )}
               {e.batch_id && <small>Общая операция: {e.batch_id}</small>}
               {before && after && (
                 <div className="diff">

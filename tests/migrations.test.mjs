@@ -8,6 +8,105 @@ import { createApp } from "../server/app.mjs";
 import { initDb, openDb } from "../server/db.mjs";
 import { Store } from "../server/store.mjs";
 
+test("v6 upgrade unlocks lecture topics without overwriting content, user marks or historical records", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "vpr-topic-upgrade-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const path = join(dir, "v6.sqlite");
+  let db = new DatabaseSync(path);
+  for (const file of [
+    "001_initial.sql",
+    "002_document_categories.sql",
+    "003_recurring_documents.sql",
+    "004_gdp_report.sql",
+    "005_plan_titles.sql",
+    "006_document_comments.sql",
+  ])
+    db.exec(
+      readFileSync(
+        new URL(`../server/migrations/${file}`, import.meta.url),
+        "utf8",
+      ),
+    );
+  initDb(db, { demo: true, production: false });
+  let store = new Store(db, { clock: () => new Date("2026-11-27T12:00:00Z") });
+  store.syncRecurring();
+  const actor = store.user("worker-1");
+  const d = store
+    .documents()
+    .find((d) => d.recurring?.ruleId === "inform-tuesday");
+  const custom = store.write({
+    ...d,
+    topic: "Моя сохранённая тема",
+    status: "READY",
+    ready: {
+      userId: actor.id,
+      name: actor.name,
+      at: "2026-11-24T12:00:00Z",
+      date: "2026-11-24",
+    },
+  });
+  store.review(store.user("chief-1"), { periodId: store.periodList()[0].id });
+  const docs = store.documents(),
+    audits = db.prepare("SELECT * FROM audit_events ORDER BY seq").all(),
+    snapshots = db.prepare("SELECT * FROM review_records").all(),
+    keys = db
+      .prepare("SELECT * FROM recurring_occurrences ORDER BY document_id")
+      .all();
+  const rules = store.recurringRules().map((r) => ({ ...r }));
+  db.close();
+  db = openDb(path);
+  try {
+    store = new Store(db);
+    for (const before of docs) {
+      const after = store.document(before.id);
+      const unlocked =
+        before.categoryId === "category-6" && before.recurring?.topicLocked;
+      assert.deepEqual(
+        after,
+        unlocked
+          ? {
+              ...before,
+              recurring: { ...before.recurring, topicLocked: false },
+            }
+          : before,
+      );
+    }
+    assert.equal(store.document(custom.id).topic, "Моя сохранённая тема");
+    for (const rule of rules) {
+      const after = { ...store.recurringRules().find((r) => r.id === rule.id) };
+      assert.deepEqual(
+        after,
+        rule.id === "inform-tuesday"
+          ? { ...rule, topic_locked: 0, version: rule.version + 1 }
+          : rule,
+      );
+    }
+    assert.deepEqual(
+      db.prepare("SELECT * FROM audit_events ORDER BY seq").all(),
+      audits,
+    );
+    assert.deepEqual(
+      db.prepare("SELECT * FROM review_records").all(),
+      snapshots,
+    );
+    assert.deepEqual(
+      db
+        .prepare("SELECT * FROM recurring_occurrences ORDER BY document_id")
+        .all(),
+      keys,
+    );
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 7);
+    assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+  } finally {
+    db.close();
+  }
+  db = openDb(path);
+  try {
+    assert.equal(new Store(db).document(d.id).topic, "Моя сохранённая тема");
+  } finally {
+    db.close();
+  }
+});
 test("application without comment entry remains compatible with a v6 database and preserves legacy discussion data", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "vpr-legacy-comments-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -50,7 +149,7 @@ test("application without comment entry remains compatible with a v6 database an
       previous,
     );
     assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 7);
   } finally {
     db.close();
   }
@@ -103,6 +202,7 @@ test("v3 upgrade adds the GDP rule immediately and preserves the checkpoint for 
             {
               ...current,
               title: old.title,
+              recurring: old.recurring,
               version: old.version,
               updatedAt: old.updatedAt,
             },
@@ -254,6 +354,7 @@ test("v4 plan headings migrate once with audit and preserve facts, custom names,
         {
           ...current,
           title: old.title,
+          recurring: old.recurring,
           version: old.version,
           updatedAt: old.updatedAt,
         },
@@ -272,7 +373,8 @@ test("v4 plan headings migrate once with audit and preserve facts, custom names,
         ? {
             ...rule,
             title: rule.title[0] + rule.title.slice(1).toLocaleLowerCase("ru"),
-            version: rule.version + 1,
+            version: rule.version + 1 + (rule.topic_locked ? 1 : 0),
+            topic_locked: 0,
           }
         : { ...rule },
     );
@@ -289,7 +391,10 @@ test("v4 plan headings migrate once with audit and preserve facts, custom names,
       data.before,
       original.find((d) => d.id === event.document_id),
     );
-    assert.deepEqual(data.after, store.document(event.document_id));
+    assert.deepEqual(data.after, {
+      ...store.document(event.document_id),
+      recurring: data.after.recurring,
+    });
     assert(data.categoryNames["category-6"]);
   }
   assert.deepEqual(db.prepare("SELECT * FROM review_records").all(), snapshots);
@@ -317,7 +422,7 @@ test("v4 plan headings migrate once with audit and preserve facts, custom names,
       db.prepare("SELECT * FROM audit_events ORDER BY seq").all(),
       audit,
     );
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 7);
   } finally {
     db.close();
   }
@@ -364,7 +469,7 @@ test("new demo and production databases contain the twelve ordered document cate
       assert.equal(categories[10].name, "Боевые листки");
       assert.equal(categories[11].name, "Рапорт ГДП");
       assert(categories.every((c) => !c.hidden));
-      assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
+      assert.equal(db.prepare("PRAGMA user_version").get().user_version, 7);
     } finally {
       db.close();
     }

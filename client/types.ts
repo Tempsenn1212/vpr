@@ -101,6 +101,15 @@ export const statuses: Record<string, string> = {
 };
 export const isSubmission = (doc: { categoryId?: string }) =>
   doc.categoryId === "category-12";
+export const isTuesdayPlan = (doc: {
+  categoryId?: string;
+  title?: string;
+  recurring?: { ruleId: string } | null;
+}) =>
+  doc.categoryId === "category-6" &&
+  (doc.recurring?.ruleId === "inform-tuesday" ||
+    doc.title?.split(" · ")[0].trim().toLocaleLowerCase("ru") ===
+      "план проведения военно-политического информирования");
 export const isReady = (doc: { status: string }) => doc.status === "READY";
 export function readinessTerms(doc?: { categoryId?: string }) {
   if (doc?.categoryId === "category-6")

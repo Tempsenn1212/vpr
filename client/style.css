@@ -837,6 +837,21 @@ main {
   margin: 8px 0 0;
   font-size: 12px;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.topic-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.document-topic-detail > small {
+  display: block;
+  color: var(--muted);
+  margin-top: 10px;
+  font-size: 10px;
+  line-height: 1.6;
 }
 .recurring-caption {
   font-size: 11px;

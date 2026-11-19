@@ -979,7 +979,7 @@ test("monthly conversation group stays one card, edits names and requires forty 
     ),
   ).toBe(false);
 });
-test("Tuesday topic is fixed, Sunday topic is editable and scheduler controls save through the UI", async ({
+test("Tuesday default and empty lecture topics can be edited directly and scheduler controls still save", async ({
   page,
   recurringApp: app,
 }) => {
@@ -997,22 +997,41 @@ test("Tuesday topic is fixed, Sunday topic is editable and scheduler controls sa
     "Военно-политическая (общественно-политическая) обстановка",
   );
   await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Редактировать", exact: true })
+    .getByRole("button", { name: "Изменить тему", exact: true })
     .click();
-  await expect(page.getByLabel("Тема лектория")).not.toBeEditable();
+  await expect(
+    page.getByLabel("Тема лектория", { exact: true }),
+  ).toBeEditable();
+  await expect(page.getByLabel("Тема лектория", { exact: true })).toBeFocused();
+  await expect(page.getByLabel("Название", { exact: true })).toHaveCount(0);
+  await page
+    .getByLabel("Тема лектория", { exact: true })
+    .fill("Уточнённая тема вторника");
+  await page
+    .getByRole("button", { name: "Сохранить тему", exact: true })
+    .click();
+  await expect(page.locator(".document-topic-detail")).toContainText(
+    "Уточнённая тема вторника",
+  );
   await page.getByRole("button", { name: "Закрыть окно", exact: true }).click();
   await page
     .getByRole("button", { name: /План проведения воскресного лектория/ })
     .click();
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Редактировать", exact: true })
-    .click();
+  await expect(page.locator(".document-topic-detail")).toContainText(
+    "Тема пока не указана.",
+  );
+  await page.getByRole("button", { name: "Указать тему", exact: true }).click();
+  await expect(page.getByLabel("Тема лектория", { exact: true })).toHaveValue(
+    "",
+  );
   await page.getByLabel("Тема лектория").fill("История научной роты");
   await page
-    .getByRole("button", { name: "Сохранить документ", exact: true })
+    .getByRole("button", { name: "Сохранить тему", exact: true })
     .click();
+  await expect(page.locator(".document-topic-detail")).toContainText(
+    "История научной роты",
+  );
+  await page.getByRole("button", { name: "Закрыть окно", exact: true }).click();
   await page
     .getByLabel("Поиск документов в таблице")
     .fill("История научной роты");
@@ -1035,4 +1054,141 @@ test("Tuesday topic is fixed, Sunday topic is editable and scheduler controls sa
     })
     .click();
   await expect(rule.locator("summary")).toContainText("выключено");
+});
+test("manual Tuesday plans prefill a default while other lecture types start empty", async ({
+  page,
+  recurringApp: app,
+}) => {
+  await login(page, app);
+  await page
+    .locator(".category-card")
+    .filter({ hasText: "Материалы единых дней информирования" })
+    .click();
+  await page
+    .getByRole("button", { name: "Создать документ", exact: true })
+    .click();
+  const title = page.getByLabel("Название", { exact: true }),
+    topic = page.getByLabel("Тема лектория", { exact: true });
+  await expect(topic).toHaveValue("");
+  await title.fill("План проведения воскресного лектория");
+  await expect(topic).toHaveValue("");
+  await title.fill("План проведения военно-политического информирования");
+  await expect(topic).toHaveValue(
+    app.store.recurringRules().find((r) => r.id === "inform-tuesday").topic,
+  );
+  await topic.fill("Тема, введённая вручную");
+  await page.getByLabel("Срок предоставления").fill("2026-11-30");
+  await page
+    .getByRole("button", { name: "Сохранить документ", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  const manual = app.store
+    .documents()
+    .find(
+      (d) => d.title === "План проведения военно-политического информирования",
+    );
+  expect(manual.topic).toBe("Тема, введённая вручную");
+  expect(manual.recurring).toBeNull();
+  await page
+    .getByRole("button", { name: "Создать документ", exact: true })
+    .click();
+  await title.fill(
+    "План проведения военно-политической работы в вечернее время",
+  );
+  await expect(topic).toHaveValue("");
+  await title.fill("План проведения единого дня информирования");
+  await expect(topic).toHaveValue("");
+});
+test("quick topic editing preserves completion and handles stale versions without discarding the draft", async ({
+  page,
+  recurringApp: app,
+}) => {
+  const created = app.store.create(app.store.user("worker-1"), {
+    title: "План с подтверждением",
+    categoryId: "category-6",
+    dueDate: "2026-11-30",
+    topic: "Прежняя тема",
+  });
+  const original = app.store.action(
+    app.store.user("chief-1"),
+    created.id,
+    "place-confirm",
+    { version: created.version, date: "2026-11-15" },
+  );
+  await login(page, app);
+  await page
+    .locator(".category-card")
+    .filter({ hasText: "Материалы единых дней информирования" })
+    .click();
+  await page
+    .locator(".document-row")
+    .getByRole("button", { name: /План с подтверждением/ })
+    .click();
+  await page
+    .getByRole("button", { name: "Изменить тему", exact: true })
+    .click();
+  const topic = page.getByLabel("Тема лектория", { exact: true });
+  await topic.fill("Новая тема");
+  await page
+    .getByRole("button", { name: "Сохранить тему", exact: true })
+    .click();
+  expect(app.store.document(original.id)).toEqual(original);
+  await page.getByRole("dialog").getByRole("checkbox").check();
+  await page
+    .getByRole("button", { name: "Сохранить тему", exact: true })
+    .click();
+  await expect(page.locator(".document-topic-detail")).toContainText(
+    "Новая тема",
+  );
+  await expect(page.getByRole("dialog").locator(".badge")).toHaveText(
+    "Вложен в журнал",
+  );
+  const completed = app.store.document(original.id);
+  expect(completed.placement).toEqual(original.placement);
+  expect(completed.confirmation).toBeNull();
+  await page
+    .getByRole("button", { name: "Изменить тему", exact: true })
+    .click();
+  await topic.fill("Мой черновик");
+  await mutate(
+    page,
+    app,
+    `/documents/${original.id}`,
+    {
+      version: completed.version,
+      title: "Название от другого участника",
+      categoryId: completed.categoryId,
+      dueDate: completed.dueDate,
+    },
+    "patch",
+  );
+  await page
+    .getByRole("button", { name: "Сохранить тему", exact: true })
+    .click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Карточка изменена другим участником",
+  );
+  await expect(topic).toHaveValue("Мой черновик");
+  await page
+    .getByRole("button", { name: "Загрузить актуальную карточку", exact: true })
+    .click();
+  await expect(topic).toHaveValue("Новая тема");
+  await topic.fill("Мой черновик");
+  await page
+    .getByRole("button", { name: "Сохранить тему", exact: true })
+    .click();
+  await expect(page.locator(".document-topic-detail")).toContainText(
+    "Мой черновик",
+  );
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByRole("heading", {
+        name: "Название от другого участника",
+        exact: true,
+      }),
+  ).toBeVisible();
+  await expect(
+    page.locator(".audit-event").filter({ hasText: "Тема лектория:" }).first(),
+  ).toContainText("Мой черновик");
 });

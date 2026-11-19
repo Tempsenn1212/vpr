@@ -816,7 +816,7 @@ test("category names support full long titles through 300 characters", async (t)
     400,
   );
 });
-test("recurrence API enforces roles, version conflicts, idempotency, protected topic and system identity", async (t) => {
+test("recurrence API enforces roles, version conflicts, idempotency, editable topic and system identity", async (t) => {
   const f = await fixture(t, { automation: true });
   const rule = f.store.recurringRules().find((r) => r.id === "weekly-summary");
   const body = {
@@ -889,9 +889,9 @@ test("recurrence API enforces roles, version conflicts, idempotency, protected t
         "PATCH",
       )
     ).status,
-    400,
+    200,
   );
-  assert.equal(f.store.document(doc.id).topic, doc.topic);
+  assert.equal(f.store.document(doc.id).topic, "Другая тема");
   assert.equal(
     (
       await f.worker.request("/documents", {
@@ -903,6 +903,97 @@ test("recurrence API enforces roles, version conflicts, idempotency, protected t
     ).status,
     400,
   );
+});
+test("Tuesday topics are editable and persistent per document while future defaults and blank lecture types remain independent", async (t) => {
+  const f = await fixture(t, { automation: true });
+  const initial = f.store
+    .documents()
+    .find((d) => d.recurring?.ruleId === "inform-tuesday");
+  const standard = initial.topic;
+  assert.equal(initial.recurring.topicLocked, false);
+  assert.match(
+    standard,
+    /^Военно-политическая \(общественно-политическая\) обстановка,/,
+  );
+  assert(standard.endsWith("в системе национальной безопасности."));
+  const rule = {
+    ...f.store.recurringRules().find((r) => r.id === "inform-tuesday"),
+  };
+  const edited = await f.worker.request(
+    `/documents/${initial.id}`,
+    {
+      version: initial.version,
+      title: initial.title,
+      dueDate: initial.dueDate,
+      categoryId: initial.categoryId,
+      topic: "Тема, уточнённая вручную\nВторая строка",
+    },
+    "PATCH",
+  );
+  assert.equal(edited.status, 200);
+  assert.equal(edited.data.status, initial.status);
+  assert.deepEqual(edited.data.ready, initial.ready);
+  assert.deepEqual(edited.data.placement, initial.placement);
+  assert.equal(edited.data.version, initial.version + 1);
+  for (let i = 0; i < 2; i++) await f.worker.request("/state");
+  assert.equal(f.store.document(initial.id).topic, edited.data.topic);
+  assert.deepEqual(
+    { ...f.store.recurringRules().find((r) => r.id === "inform-tuesday") },
+    rule,
+  );
+  assert(
+    f.store
+      .documents()
+      .filter((d) =>
+        ["evening-friday", "lecture-sunday", "information-day"].includes(
+          d.recurring?.ruleId,
+        ),
+      )
+      .every((d) => d.topic === ""),
+  );
+  f.store.clock = () => new Date("2026-12-04T12:00:00Z");
+  await f.worker.request("/state");
+  const next = f.store
+    .documents()
+    .find(
+      (d) => d.recurring?.ruleId === "inform-tuesday" && d.id !== initial.id,
+    );
+  assert(next);
+  assert.equal(next.topic, standard);
+  assert.equal(next.recurring.topicLocked, false);
+  assert.equal(f.store.document(initial.id).topic, edited.data.topic);
+  const cleared = await f.worker.request(
+    `/documents/${initial.id}`,
+    {
+      version: edited.data.version,
+      title: initial.title,
+      dueDate: initial.dueDate,
+      categoryId: initial.categoryId,
+      topic: "",
+    },
+    "PATCH",
+  );
+  assert.equal(cleared.status, 200);
+  await f.worker.request("/state");
+  assert.equal(f.store.document(initial.id).topic, "");
+  assert.equal(f.store.document(next.id).topic, standard);
+  assert.equal(
+    (
+      await f.worker.request(
+        `/documents/${initial.id}`,
+        {
+          version: initial.version,
+          title: initial.title,
+          dueDate: initial.dueDate,
+          categoryId: initial.categoryId,
+          topic: "Устаревшая версия",
+        },
+        "PATCH",
+      )
+    ).status,
+    409,
+  );
+  assert.equal(f.store.document(initial.id).topic, "");
 });
 test("forty nested items require real readiness before journal placement, with audit and optimistic conflicts", async (t) => {
   const f = await fixture(t);

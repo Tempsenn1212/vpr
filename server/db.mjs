@@ -15,6 +15,7 @@ export function openDb(path) {
     "004_gdp_report.sql",
     "005_plan_titles.sql",
     "006_document_comments.sql",
+    "007_editable_lecture_topics.sql",
   ];
   for (const [index, file] of migrations.entries()) {
     if (db.prepare("PRAGMA user_version").get().user_version >= index + 1)

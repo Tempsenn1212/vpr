@@ -204,8 +204,10 @@ export class Store {
       after.readyDueDate = b.readyDueDate ? date(b.readyDueDate) : null;
     if (b.topic !== undefined) {
       demand(
-        !old.recurring?.topicLocked || b.topic === old.topic,
-        "Тема вторничного информирования фиксирована",
+        old.categoryId === "category-6" ||
+          !old.recurring?.topicLocked ||
+          b.topic === old.topic,
+        "Тема задана расписанием и недоступна для изменения",
       );
       after.topic = cleanTopic(b.topic);
     }

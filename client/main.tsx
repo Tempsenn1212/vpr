@@ -40,6 +40,7 @@ import {
   isReady,
   readyHint,
   readinessTerms,
+  isTuesdayPlan,
 } from "./types";
 import { api, ApiError, setSessionToken } from "./api";
 import { Dashboard, type DashboardFilter } from "./Dashboard";
@@ -262,9 +263,15 @@ function App() {
     setError("");
     setModal({ type: "doc", doc: d });
   }
-  function form(d?: Doc, copy = false, c?: string) {
+  function form(d?: Doc, copy = false, c?: string, topicOnly = false) {
     setError("");
-    setModal({ type: "form", doc: d, copy, categoryId: c || category });
+    setModal({
+      type: "form",
+      doc: d,
+      copy,
+      categoryId: c || category,
+      topicOnly,
+    });
   }
   if (!data)
     return (
@@ -777,8 +784,13 @@ function App() {
                       : "/documents",
                     b,
                     modal.doc && !modal.copy ? "PATCH" : "POST",
-                    "Карточка сохранена",
+                    modal.topicOnly
+                      ? "Тема лектория сохранена"
+                      : "Карточка сохранена",
+                    !modal.topicOnly,
                   );
+                  if (saved && modal.topicOnly)
+                    setModal({ type: "doc", doc: saved });
                   if (
                     saved &&
                     selectedMonth &&
@@ -802,6 +814,7 @@ function App() {
                 s={s}
                 busy={busy}
                 edit={(d: Doc) => form(d)}
+                topicEdit={(d: Doc) => form(d, false, "", true)}
                 copy={(d: Doc) => form(d, true)}
                 action={(d: Doc, a: string) => {
                   setError("");
@@ -1102,6 +1115,7 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
     [due, setDue] = useState(editing ? old.dueDate : ""),
     [readyDue, setReadyDue] = useState(editing ? old.readyDueDate || "" : ""),
     [topic, setTopic] = useState(old?.topic || ""),
+    [topicTouched, setTopicTouched] = useState(false),
     [cat, setCat] = useState(
       old?.categoryId ||
         modal.categoryId ||
@@ -1111,6 +1125,14 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
     [placementDate, setPlacement] = useState(old?.placement?.date || ""),
     [ack, setAck] = useState(false),
     [attempt, setAttempt] = useState(false);
+  const topicOnly = !!(editing && modal.topicOnly);
+  const defaultTopic =
+    s.recurringRules.find((rule: any) => rule.id === "inform-tuesday")?.topic ||
+    "";
+  useEffect(() => {
+    if (!old && !topicTouched)
+      setTopic(isTuesdayPlan({ categoryId: cat, title }) ? defaultTopic : "");
+  }, [old, topicTouched, cat, title, defaultTopic]);
   const invalidTitle = !title.trim() || title.trim().length > 200;
   const changed =
     editing &&
@@ -1146,12 +1168,15 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
     >
       <div className="eyebrow">КАРТОЧКА ДОКУМЕНТА</div>
       <h2>
-        {modal.copy
-          ? "Создать копию"
-          : editing
-            ? "Редактировать документ"
-            : "Новый документ"}
+        {topicOnly
+          ? "Тема лектория"
+          : modal.copy
+            ? "Создать копию"
+            : editing
+              ? "Редактировать документ"
+              : "Новый документ"}
       </h2>
+      {topicOnly && <p className="muted">{old.title}</p>}
       {modal.conflict && (
         <div className="warning">
           <div>
@@ -1170,57 +1195,65 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
           копируются.
         </p>
       )}
-      <label className="field">
-        Название
-        <textarea
-          aria-label="Название"
-          maxLength={200}
-          rows={3}
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          autoFocus
-        />
-        <small>{title.length}/200</small>
-        {attempt && invalidTitle && (
-          <span className="field-error">Введите название (1–200 символов)</span>
-        )}
-      </label>
-      <label className="field">
-        {readinessTerms({ categoryId: cat }).deadline}
-        <input
-          type="date"
-          min="1900-01-01"
-          max={due || "2200-12-31"}
-          value={readyDue}
-          onChange={(e) => setReadyDue(e.target.value)}
-        />
-        <small>{readinessTerms({ categoryId: cat }).help}</small>
-      </label>
-      <label className="field">
-        Срок предоставления
-        <input
-          type="date"
-          min="1900-01-01"
-          max="2200-12-31"
-          value={due}
-          onChange={(e) => setDue(e.target.value)}
-        />
-        {attempt && !due && <span className="field-error">Укажите срок</span>}
-      </label>
-      <div className="field">
-        <span>Категория</span>
-        <CategorySelect
-          categories={s.categories
-            .filter((c: Category) => !c.hidden || c.id === old?.categoryId)
-            .map((c: Category) => ({
-              ...c,
-              name: c.name + (c.hidden ? " (скрыта)" : ""),
-            }))}
-          value={cat}
-          onChange={setCat}
-          required
-        />
-      </div>
+      {!topicOnly && (
+        <>
+          <label className="field">
+            Название
+            <textarea
+              aria-label="Название"
+              maxLength={200}
+              rows={3}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              autoFocus
+            />
+            <small>{title.length}/200</small>
+            {attempt && invalidTitle && (
+              <span className="field-error">
+                Введите название (1–200 символов)
+              </span>
+            )}
+          </label>
+          <label className="field">
+            {readinessTerms({ categoryId: cat }).deadline}
+            <input
+              type="date"
+              min="1900-01-01"
+              max={due || "2200-12-31"}
+              value={readyDue}
+              onChange={(e) => setReadyDue(e.target.value)}
+            />
+            <small>{readinessTerms({ categoryId: cat }).help}</small>
+          </label>
+          <label className="field">
+            Срок предоставления
+            <input
+              type="date"
+              min="1900-01-01"
+              max="2200-12-31"
+              value={due}
+              onChange={(e) => setDue(e.target.value)}
+            />
+            {attempt && !due && (
+              <span className="field-error">Укажите срок</span>
+            )}
+          </label>
+          <div className="field">
+            <span>Категория</span>
+            <CategorySelect
+              categories={s.categories
+                .filter((c: Category) => !c.hidden || c.id === old?.categoryId)
+                .map((c: Category) => ({
+                  ...c,
+                  name: c.name + (c.hidden ? " (скрыта)" : ""),
+                }))}
+              value={cat}
+              onChange={setCat}
+              required
+            />
+          </div>
+        </>
+      )}
       {(cat === "category-6" || topic) && (
         <label className="field">
           Тема лектория
@@ -1229,12 +1262,27 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
             maxLength={3000}
             rows={5}
             value={topic}
-            readOnly={!!(editing && old.recurring?.topicLocked)}
-            onChange={(e) => setTopic(e.target.value)}
+            readOnly={
+              !!(
+                editing &&
+                old.categoryId !== "category-6" &&
+                old.recurring?.topicLocked
+              )
+            }
+            autoFocus={topicOnly}
+            placeholder="Заполните тему, когда она станет известна"
+            onChange={(e) => {
+              setTopic(e.target.value);
+              setTopicTouched(true);
+            }}
           />
-          {editing && old.recurring?.topicLocked && (
+          {isTuesdayPlan({
+            categoryId: cat,
+            title,
+            recurring: old?.recurring,
+          }) && (
             <small>
-              Для вторничного информирования установлена постоянная тема.
+              Постоянная тема по умолчанию. Можно изменить для этого документа.
             </small>
           )}
         </label>
@@ -1245,7 +1293,7 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
           уточнить после создания.
         </p>
       )}
-      {editing && old.placement && (
+      {editing && !topicOnly && old.placement && (
         <label className="field">
           {cat === "category-12"
             ? "Фактическая дата сдачи"
@@ -1271,12 +1319,25 @@ function DocumentForm({ s, modal, busy, reload, submit }: any) {
         </label>
       )}
       <button disabled={busy} className="button full" type="submit">
-        {busy ? "Сохраняем…" : "Сохранить документ"}
+        {busy
+          ? "Сохраняем…"
+          : topicOnly
+            ? "Сохранить тему"
+            : "Сохранить документ"}
       </button>
     </form>
   );
 }
-function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
+function DocumentDetail({
+  doc: d,
+  s,
+  busy,
+  edit,
+  topicEdit,
+  copy,
+  action,
+  run,
+}: any) {
   const chief = s.me.role === "CHIEF";
   const submission = isSubmission(d);
   const mark = (label: string, m: any) => (
@@ -1323,11 +1384,30 @@ function DocumentDetail({ doc: d, s, busy, edit, copy, action, run }: any) {
           По расписанию · {fmt(d.recurring.start)} — {fmt(d.recurring.end)}
         </p>
       )}
-      {d.topic && (
-        <div className="document-topic-detail">
-          <b>Тема лектория</b>
-          <p>{d.topic}</p>
-        </div>
+      {(d.categoryId === "category-6" || d.topic) && (
+        <section className="document-topic-detail" aria-label="Тема лектория">
+          <div className="topic-heading">
+            <b>Тема лектория</b>
+            {!d.deleted && (
+              <button
+                type="button"
+                className="text-link"
+                disabled={busy}
+                onClick={() => topicEdit(d)}
+              >
+                {d.topic ? "Изменить тему" : "Указать тему"}
+              </button>
+            )}
+          </div>
+          <p className={d.topic ? "" : "muted"}>
+            {d.topic || "Тема пока не указана."}
+          </p>
+          {isTuesdayPlan(d) && (
+            <small>
+              Постоянная тема по умолчанию. Можно изменить для этого документа.
+            </small>
+          )}
+        </section>
       )}
       <div className="detail-dates">
         <div>
@@ -1856,7 +1936,7 @@ function AuditList({
               {e.batch_id && <small>Общая операция: {e.batch_id}</small>}
               {before && after && (
                 <div className="diff">
-                  {["title", "categoryId", "dueDate", "status"]
+                  {["title", "categoryId", "dueDate", "status", "topic"]
                     .filter((k) => before[k] !== after[k])
                     .map((k) => (
                       <p key={k}>
@@ -1867,6 +1947,7 @@ function AuditList({
                               categoryId: "Категория",
                               dueDate: "Срок",
                               status: "Статус",
+                              topic: "Тема лектория",
                             } as any
                           )[k]
                         }

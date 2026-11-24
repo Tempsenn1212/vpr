@@ -90,7 +90,8 @@ function App() {
     loading = useRef(false),
     epoch = useRef(0),
     authenticated = useRef(false),
-    authenticating = useRef(false);
+    authenticating = useRef(false),
+    refreshInterval = useRef(2000);
   const [loginBusy, setLoginBusy] = useState(false);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -140,6 +141,10 @@ function App() {
     setSessionToken(null);
     try {
       const config = await api("/config");
+      refreshInterval.current = Math.max(
+        2000,
+        Math.min(60000, Number(config.refreshIntervalMs) || 2000),
+      );
       setLogin(config.demo ? await api("/auth/demo-users") : null);
       if (!config.demo && !tg?.initData) {
         throw new ApiError(
@@ -170,13 +175,25 @@ function App() {
   useEffect(() => {
     mounted.current = true;
     void init();
-    const timer = setInterval(() => void refresh(), 2000);
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = () => {
+      timer = setTimeout(async () => {
+        if (!document.hidden) await refresh();
+        if (mounted.current) poll();
+      }, refreshInterval.current);
+    };
+    poll();
     const reconnect = () => void refresh();
+    const visible = () => {
+      if (!document.hidden) void refresh();
+    };
     window.addEventListener("online", reconnect);
+    document.addEventListener("visibilitychange", visible);
     return () => {
       mounted.current = false;
-      clearInterval(timer);
+      clearTimeout(timer);
       window.removeEventListener("online", reconnect);
+      document.removeEventListener("visibilitychange", visible);
     };
   }, []);
   useEffect(() => {
@@ -2089,7 +2106,29 @@ function SettingsView({ s, run, busy, setError }: any) {
     [userDraft, setUser] = useState<any>(null),
     [catDraft, setCat] = useState<any>(null),
     [target, setTarget] = useState(""),
-    [transferAck, setTransferAck] = useState(false);
+    [transferAck, setTransferAck] = useState(false),
+    [backupBusy, setBackupBusy] = useState(false);
+  async function downloadBackup() {
+    setBackupBusy(true);
+    try {
+      setError("");
+      const snapshot = await api("/admin/export");
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(snapshot)], { type: "application/json" }),
+      );
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "vpr-backup-" + s.today + ".json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBackupBusy(false);
+    }
+  }
   async function previewSchedule() {
     try {
       setError("");
@@ -2190,6 +2229,22 @@ function SettingsView({ s, run, busy, setError }: any) {
       </section>
       {admin && (
         <>
+          {s.portableBackup && (
+            <section className="panel">
+              <h2>Резервная копия</h2>
+              <p className="muted">
+                Сохраните документы, участников и историю в файл для
+                восстановления на новом сервере.
+              </p>
+              <button
+                className="button secondary"
+                disabled={backupBusy || busy}
+                onClick={() => void downloadBackup()}
+              >
+                {backupBusy ? "Подготавливаем…" : "Скачать резервную копию"}
+              </button>
+            </section>
+          )}
           <section className="panel">
             <div className="section-title">
               <h2>Участники и роли</h2>

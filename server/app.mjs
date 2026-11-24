@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { openDb, initDb } from "./db.mjs";
 import { Store } from "./store.mjs";
+import { exportData } from "./portable-backup.mjs";
 import { seedDemo } from "./seed.mjs";
 import { demand, Problem } from "./domain.mjs";
 import { validateTelegram, newSession, sessionUser } from "./auth.mjs";
@@ -130,9 +131,13 @@ export function createApp(options = {}) {
     db.prepare("DELETE FROM sessions WHERE user_id=?").run(req.actor.id);
     res.json({ ok: true });
   });
+  app.get("/api/admin/export", (req, res) => {
+    store.admin(req.actor);
+    res.json(exportData(db));
+  });
   app.get("/api/state", (req, res) => {
     if (config.automation) store.syncRecurring();
-    res.json(store.state(req.actor));
+    res.json({ ...store.state(req.actor), portableBackup: !config.demo });
   });
   const mutation = (path, fn, method = "post") =>
     app[method](path, (req, res) =>

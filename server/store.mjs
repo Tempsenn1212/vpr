@@ -13,7 +13,8 @@ import {
   proposeSchedule,
   transition,
 } from "./domain.mjs";
-import { userRow } from "./db.mjs";
+import { userRow } from "./users.mjs";
+import { transaction } from "./transaction.mjs";
 import { occurrences, SYSTEM_ACTOR_ID } from "./recurrence.mjs";
 const cleanTopic = (value) =>
   value == null || (typeof value === "string" && !value.trim())
@@ -128,8 +129,7 @@ export class Store {
     const fingerprint = createHash("sha256")
       .update(path + "\n" + JSON.stringify(body))
       .digest("hex");
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
+    return transaction(this.db, () => {
       const current = this.user(actor.id);
       demand(current?.active, "Доступ отключён", 403);
       const old = this.db
@@ -141,19 +141,14 @@ export class Store {
           "Ключ запроса уже использован для другого действия",
           409,
         );
-        this.db.exec("COMMIT");
         return JSON.parse(old.response);
       }
       const result = fn(current);
       this.db
         .prepare("INSERT INTO request_keys VALUES(?,?,?,?)")
         .run(actor.id, key, fingerprint, JSON.stringify(result));
-      this.db.exec("COMMIT");
       return result;
-    } catch (e) {
-      this.db.exec("ROLLBACK");
-      throw e;
-    }
+    });
   }
   create(actor, b, recurring = null) {
     this.category(b.categoryId);
@@ -407,11 +402,9 @@ export class Store {
         .prepare("SELECT value FROM meta WHERE key='recurring_rules_changed'")
         .get();
     if (last() >= day && !changed()) return 0;
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
+    return transaction(this.db, () => {
       const from = last() || day;
       if (from > day) {
-        this.db.exec("COMMIT");
         return 0;
       }
       const actor = this.user(SYSTEM_ACTOR_ID);
@@ -462,12 +455,8 @@ export class Store {
       this.db
         .prepare("DELETE FROM meta WHERE key='recurring_rules_changed'")
         .run();
-      this.db.exec("COMMIT");
       return created;
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
+    });
   }
   allVersions() {
     return this.db

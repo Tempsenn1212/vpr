@@ -7,3 +7,7 @@ test-results/
 *.sqlite*
 
 backups/
+.wrangler/
+.dev.vars
+.cloudflare-setup.json
+cloudflare-dist/

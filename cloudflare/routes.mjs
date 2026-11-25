@@ -1,4 +1,6 @@
 export const routes = [
+  ["POST", "/api/roles", (s, a, b) => s.saveRole(a, null, b)],
+  ["PATCH", "/api/roles/:id", (s, a, b, p) => s.saveRole(a, p.id, b)],
   ["POST", "/api/documents", (s, a, b) => s.create(a, b)],
   [
     "POST",

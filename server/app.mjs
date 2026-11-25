@@ -102,7 +102,13 @@ export function createApp(options = {}) {
       store
         .users()
         .filter((u) => u.active)
-        .map(({ id, name, role, admin }) => ({ id, name, role, admin })),
+        .map(({ id, name, role, roleName, admin }) => ({
+          id,
+          name,
+          role,
+          roleName,
+          admin,
+        })),
     );
   });
   app.post("/api/auth/demo", authRate, (req, res) => {
@@ -132,7 +138,7 @@ export function createApp(options = {}) {
     res.json({ ok: true });
   });
   app.get("/api/admin/export", (req, res) => {
-    store.admin(req.actor);
+    store.require(req.actor, "backup.export");
     res.json(exportData(db));
   });
   app.get("/api/state", (req, res) => {
@@ -177,14 +183,12 @@ export function createApp(options = {}) {
   mutation("/api/batches/confirm", (a, b) => store.batch(a, b));
   mutation("/api/reviews", (a, b) => store.review(a, b));
   app.post("/api/schedule/preview", (req, res) => {
-    demand(
-      req.actor.admin || req.actor.role === "CHIEF",
-      "Нет права менять расписание",
-      403,
-    );
+    store.require(req.actor, "schedule.manage");
     res.json(store.schedulePreview(req.body));
   });
   mutation("/api/schedule", (a, b) => store.changeSchedule(a, b));
+  mutation("/api/roles", (a, b) => store.saveRole(a, null, b));
+  mutation("/api/roles/:id", (a, b, p) => store.saveRole(a, p.id, b), "patch");
   mutation("/api/users", (a, b) => store.saveUser(a, null, b));
   mutation("/api/users/:id", (a, b, p) => store.saveUser(a, p.id, b), "patch");
   mutation("/api/admin/transfer", (a, b) => store.transfer(a, b));

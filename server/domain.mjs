@@ -1,3 +1,4 @@
+import { can } from "../shared/permissions.ts";
 export const STATUS = {
   IN_PROGRESS: "В работе",
   READY: "Документ оформлен",
@@ -200,10 +201,25 @@ export function proposeSchedule(versions, b, day) {
   return { ...settings, effectiveStart: addDays(current.end, 1) };
 }
 export function transition(source, action, body, actor, at, day) {
+  const permission = {
+    ready: "documents.ready",
+    place: "documents.place",
+    "place-confirm": "documents.place",
+    confirm: "documents.confirm",
+    reject: "documents.confirm",
+    revoke: "documents.confirm",
+    return: "documents.return",
+  }[action];
+  if (permission)
+    demand(can(actor, permission), "Нет права выполнять это действие", 403);
   const d = structuredClone(source);
   const mark = { userId: actor.id, name: actor.name, at };
   const chief = () =>
-    demand(actor.role === "CHIEF", "Доступно только начальнику", 403);
+    demand(
+      can(actor, "documents.confirm"),
+      "Нет права подтверждать документы",
+      403,
+    );
   const from = (states) =>
     demand(
       states.includes(d.status),

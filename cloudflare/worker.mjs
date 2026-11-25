@@ -203,15 +203,11 @@ export class VprDatabase extends DurableObject {
         return json({ ...this.store.state(actor), portableBackup: true });
       }
       if (path === "/api/admin/export" && method === "GET") {
-        this.store.admin(actor);
+        this.store.require(actor, "backup.export");
         return json(exportData(this.db));
       }
       if (path === "/api/schedule/preview" && method === "POST") {
-        demand(
-          actor.admin || actor.role === "CHIEF",
-          "Нет права менять расписание",
-          403,
-        );
+        this.store.require(actor, "schedule.manage");
         return json(this.store.schedulePreview(await body(request)));
       }
       const route = findRoute(method, path);

@@ -5,7 +5,8 @@ import m4 from "../server/migrations/004_gdp_report.sql";
 import m5 from "../server/migrations/005_plan_titles.sql";
 import m6 from "../server/migrations/006_document_comments.sql";
 import m7 from "../server/migrations/007_editable_lecture_topics.sql";
-export const migrations = [m1, m2, m3, m4, m5, m6, m7];
+import m8 from "../server/migrations/008_custom_roles.sql";
+export const migrations = [m1, m2, m3, m4, m5, m6, m7, m8];
 export function migrate(db) {
   db.exec(
     "CREATE TABLE IF NOT EXISTS _vpr_schema (version INTEGER PRIMARY KEY)",

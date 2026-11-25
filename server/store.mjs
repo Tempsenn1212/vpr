@@ -13,6 +13,12 @@ import {
   proposeSchedule,
   transition,
 } from "./domain.mjs";
+import {
+  can,
+  canAssignRole,
+  defaultRoles,
+  permissionCatalog,
+} from "../shared/permissions.ts";
 import { userRow } from "./users.mjs";
 import { transaction } from "./transaction.mjs";
 import { occurrences, SYSTEM_ACTOR_ID } from "./recurrence.mjs";
@@ -32,15 +38,120 @@ export class Store {
   day() {
     return today(this.clock(), this.zone);
   }
+  hasRoles() {
+    this.rolesReady ||= !!this.db
+      .prepare(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='roles'",
+      )
+      .get();
+    return this.rolesReady;
+  }
+  roles() {
+    return this.hasRoles()
+      ? this.db
+          .prepare("SELECT * FROM roles ORDER BY rowid")
+          .all()
+          .map((r) => ({ ...r, permissions: JSON.parse(r.permissions) }))
+      : structuredClone(defaultRoles);
+  }
+  decorateUser(row, roles = this.roles(), assignments) {
+    if (!row) return null;
+    const assigned = assignments
+      ? assignments.get(row.id)
+      : this.hasRoles()
+        ? this.db
+            .prepare("SELECT role_id FROM user_roles WHERE user_id=?")
+            .get(row.id)?.role_id
+        : null;
+    const role = roles.find((r) => r.id === (assigned || row.role));
+    return {
+      ...userRow(row),
+      role: role?.id || row.role,
+      roleName: role?.name || "Роль",
+      permissions: role?.permissions || [],
+    };
+  }
   users() {
+    const roles = this.roles();
+    const assignments = new Map(
+      this.hasRoles()
+        ? this.db
+            .prepare("SELECT * FROM user_roles")
+            .all()
+            .map((r) => [r.user_id, r.role_id])
+        : [],
+    );
     return this.db
       .prepare("SELECT * FROM users ORDER BY name")
       .all()
       .filter((u) => u.id !== SYSTEM_ACTOR_ID)
-      .map(userRow);
+      .map((u) => this.decorateUser(u, roles, assignments));
   }
   user(id) {
-    return userRow(this.db.prepare("SELECT * FROM users WHERE id=?").get(id));
+    return this.decorateUser(
+      this.db.prepare("SELECT * FROM users WHERE id=?").get(id),
+    );
+  }
+  require(actor, permission) {
+    demand(
+      can(actor, permission),
+      "Нет права: " +
+        (permissionCatalog.find((p) => p.id === permission)?.label ||
+          permission),
+      403,
+    );
+  }
+  saveRole(actor, id, b) {
+    this.require(actor, "roles.manage");
+    const name = text(b.name, "Название роли", 80);
+    demand(
+      Array.isArray(b.permissions) &&
+        b.permissions.every(
+          (p) =>
+            typeof p === "string" && permissionCatalog.some((x) => x.id === p),
+        ) &&
+        new Set(b.permissions).size === b.permissions.length,
+      "Укажите известные права без повторов",
+    );
+    demand(
+      !b.permissions.includes("reviews.create") ||
+        b.permissions.includes("reviews.view"),
+      "Для фиксации проверок нужен просмотр периодов",
+    );
+    const roles = this.roles(),
+      old = id ? roles.find((r) => r.id === id) : null;
+    demand(!id || old, "Роль не найдена", 404);
+    demand(
+      !old || b.version === old.version,
+      "Роль изменена другим участником. Загрузите актуальную версию.",
+      409,
+    );
+    demand(
+      !roles.some(
+        (r) =>
+          r.id !== id &&
+          r.name.toLocaleLowerCase("ru") === name.toLocaleLowerCase("ru"),
+      ),
+      "Роль с таким названием уже существует",
+    );
+    const nextId = id || randomUUID();
+    const permissions = permissionCatalog
+      .filter((p) => b.permissions.includes(p.id))
+      .map((p) => p.id);
+    if (
+      old &&
+      old.name === name &&
+      JSON.stringify(old.permissions) === JSON.stringify(permissions)
+    )
+      return old;
+    this.db
+      .prepare(
+        "INSERT INTO roles(id,name,permissions,version) VALUES(?,?,?,1) ON CONFLICT(id) DO UPDATE SET name=excluded.name,permissions=excluded.permissions,version=roles.version+1",
+      )
+      .run(nextId, name, JSON.stringify(permissions));
+    const after = this.roles().find((r) => r.id === nextId);
+    this.audit(actor, "ROLE", null, { before: old, after });
+    return after;
   }
   categories() {
     return this.db
@@ -151,6 +262,7 @@ export class Store {
     });
   }
   create(actor, b, recurring = null) {
+    if (actor.id !== SYSTEM_ACTOR_ID) this.require(actor, "documents.create");
     this.category(b.categoryId);
     const d = {
       id: randomUUID(),
@@ -186,6 +298,7 @@ export class Store {
     return d;
   }
   edit(actor, id, b) {
+    this.require(actor, "documents.edit");
     const old = this.document(id);
     this.check(old, b.version);
     this.category(b.categoryId, b.categoryId === old.categoryId);
@@ -264,12 +377,15 @@ export class Store {
     );
   }
   remove(actor, id, b) {
+    this.require(actor, "documents.delete");
     const old = this.document(id);
     this.check(old, b.version);
     demand(b.confirmed === true, "Подтвердите удаление");
     return this.commitDocument(old, { ...old, deleted: true }, actor, "DELETE");
   }
   updateItem(actor, id, itemId, b) {
+    if (b.label !== undefined) this.require(actor, "documents.edit");
+    if (typeof b.done === "boolean") this.require(actor, "documents.ready");
     const old = this.document(id);
     this.check(old, b.version);
     demand(!isCompleted(old), "Сначала верните месячную группу в работу", 409);
@@ -309,6 +425,7 @@ export class Store {
     return this.commitDocument(old, after, actor, "SUBDOCUMENT", { itemId });
   }
   completeItems(actor, id, b) {
+    this.require(actor, "documents.ready");
     const old = this.document(id);
     this.check(old, b.version);
     demand(!isCompleted(old), "Сначала верните месячную группу в работу", 409);
@@ -350,11 +467,7 @@ export class Store {
       .run();
   }
   saveRecurringRule(actor, id, b) {
-    demand(
-      actor.admin || actor.role === "CHIEF",
-      "Нет права менять расписание",
-      403,
-    );
+    this.require(actor, "schedule.manage");
     const rule = this.recurringRules().find((r) => r.id === id);
     demand(rule, "Расписание не найдено", 404);
     demand(
@@ -497,7 +610,7 @@ export class Store {
       .run(p.id, p.start, p.end, p.scheduleId, JSON.stringify(p));
   }
   batch(actor, b) {
-    demand(actor.role === "CHIEF", "Доступно только начальнику", 403);
+    this.require(actor, "documents.confirm");
     const p = this.period(b.periodId);
     demand(
       b.categoryId === "ALL" ||
@@ -574,7 +687,7 @@ export class Store {
     return result;
   }
   review(actor, b) {
-    demand(actor.role === "CHIEF", "Доступно только начальнику", 403);
+    this.require(actor, "reviews.create");
     const p = this.period(b.periodId);
     this.persistPeriod(p);
     const docs = this.periodDocs(p);
@@ -616,11 +729,7 @@ export class Store {
     };
   }
   changeSchedule(actor, b) {
-    demand(
-      actor.admin || actor.role === "CHIEF",
-      "Нет права менять расписание",
-      403,
-    );
+    this.require(actor, "schedule.manage");
     demand(
       b.expectedVersion === this.versions().at(-1).id,
       "Расписание уже изменено. Обновите данные.",
@@ -657,10 +766,13 @@ export class Store {
       "Системный участник недоступен для изменения",
       403,
     );
-    this.admin(actor);
+    this.require(actor, "users.manage");
+    const role = this.roles().find((r) => r.id === b.role);
+    demand(role, "Неизвестная рабочая роль");
     demand(
-      b.role === "WORKER" || b.role === "CHIEF",
-      "Неизвестная рабочая роль",
+      canAssignRole(actor, role),
+      "Нельзя назначить права, которых у вас нет",
+      403,
     );
     const name = text(b.name, "Имя", 100);
     demand(
@@ -671,6 +783,16 @@ export class Store {
     );
     const old = id ? this.user(id) : null;
     demand(!id || old, "Участник не найден", 404);
+    demand(
+      !old?.admin || actor.admin,
+      "Только администратор может менять свою учётную запись",
+      403,
+    );
+    demand(
+      !old || canAssignRole(actor, { permissions: old.permissions }),
+      "Нельзя менять участника с более широкими правами",
+      403,
+    );
     const active = b.active !== false;
     demand(!(old?.admin && !active), "Сначала передайте администрирование");
     const duplicate = this.users().find(
@@ -686,10 +808,20 @@ export class Store {
         nextId,
         b.telegramId,
         name,
-        b.role,
+        b.role === "CHIEF" ? "CHIEF" : "WORKER",
         old?.admin ? 1 : 0,
         active ? 1 : 0,
       );
+    if (this.hasRoles()) {
+      if (b.role === "WORKER" || b.role === "CHIEF")
+        this.db.prepare("DELETE FROM user_roles WHERE user_id=?").run(nextId);
+      else
+        this.db
+          .prepare(
+            "INSERT INTO user_roles VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET role_id=excluded.role_id",
+          )
+          .run(nextId, b.role);
+    }
     const after = this.user(nextId);
     this.audit(actor, "USER", null, { before: old, after });
     return after;
@@ -710,7 +842,7 @@ export class Store {
     return { userId: target.id };
   }
   saveCategory(actor, id, b) {
-    this.admin(actor);
+    this.require(actor, "categories.manage");
     const name = text(b.name, "Название категории", 300);
     demand(
       Number.isInteger(b.position) && b.position >= 0 && b.position <= 10000,
@@ -752,23 +884,32 @@ export class Store {
       .map((r) => ({ ...r, snapshot: JSON.parse(r.snapshot) }));
     return {
       me: actor,
+      roles: this.roles(),
       today: this.day(),
       timeZone: this.zone,
       documents: docs,
       categories: this.categories(),
       users: this.users().map((u) =>
-        actor.admin
+        can(actor, "users.manage")
           ? u
-          : { id: u.id, name: u.name, role: u.role, active: u.active },
+          : {
+              id: u.id,
+              name: u.name,
+              role: u.role,
+              roleName: u.roleName,
+              active: u.active,
+            },
       ),
       periods: list,
-      reviewRecords: records,
+      reviewRecords: can(actor, "reviews.view") ? records : [],
       scheduleVersions: this.allVersions(),
       recurringRules: this.recurringRules(),
-      audit: this.db
-        .prepare("SELECT * FROM audit_events ORDER BY seq DESC")
-        .all()
-        .map((e) => ({ ...e, data: JSON.parse(e.data) })),
+      audit: !can(actor, "history.view")
+        ? []
+        : this.db
+            .prepare("SELECT * FROM audit_events ORDER BY seq DESC")
+            .all()
+            .map((e) => ({ ...e, data: JSON.parse(e.data) })),
     };
   }
 }

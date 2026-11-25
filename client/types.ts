@@ -1,7 +1,9 @@
 export type User = {
   id: string;
   name: string;
-  role: "WORKER" | "CHIEF";
+  role: string;
+  roleName?: string;
+  permissions?: string[];
   admin?: boolean;
   active: boolean;
   telegram_id?: string;
@@ -66,7 +68,14 @@ export type Audit = {
   batch_id?: string;
   data: any;
 };
+export type Role = {
+  id: string;
+  name: string;
+  permissions: string[];
+  version: number;
+};
 export type State = {
+  roles: Role[];
   me: User;
   today: string;
   timeZone: string;
@@ -182,6 +191,7 @@ export const events: Record<string, string> = {
   DELETE: "Карточка удалена",
   REVIEW: "Проверка проведена",
   SCHEDULE: "Расписание изменено",
+  ROLE: "Роль изменена",
   USER: "Участник изменён",
   TRANSFER_ADMIN: "Администрирование передано",
   CATEGORY: "Категория изменена",

@@ -2575,3 +2575,37 @@ pre {
     scroll-behavior: auto !important;
   }
 }
+.permission-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.permission-groups fieldset {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.permission-groups legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px;
+  font-weight: 700;
+}
+.permission-groups .checkbox {
+  align-items: flex-start;
+  margin: 12px 0;
+}
+.permission-groups .checkbox span {
+  overflow-wrap: anywhere;
+}
+.role-editor .warning {
+  margin-bottom: 16px;
+}
+@media (max-width: 700px) {
+  .permission-groups {
+    grid-template-columns: 1fr;
+  }
+}

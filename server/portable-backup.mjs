@@ -1,10 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
+import { defaultRoles, permissionCatalog } from "../shared/permissions.ts";
 import { demand } from "./domain.mjs";
 import { transaction } from "./transaction.mjs";
 // Sessions are intentionally excluded: Telegram re-authenticates after migration.
 export const backupTables = [
   "meta",
+  "roles",
   "users",
+  "user_roles",
   "categories",
   "documents",
   "audit_events",
@@ -41,7 +44,7 @@ export function exportData(db, { promoteDemoAdminId } = {}) {
       );
     const snapshot = {
       format: "vpr-portable-v1",
-      schemaVersion: 7,
+      schemaVersion: 8,
       exportedAt: new Date().toISOString(),
       tables: Object.fromEntries(
         backupTables.map((t) => [
@@ -83,13 +86,21 @@ export function exportData(db, { promoteDemoAdminId } = {}) {
 }
 export function importData(db, snapshot, adminTelegramId) {
   demand(
-    snapshot?.format === "vpr-portable-v1" && snapshot.schemaVersion === 7,
+    snapshot?.format === "vpr-portable-v1" &&
+      [7, 8].includes(snapshot.schemaVersion),
     "Неподдерживаемая версия резервной копии",
   );
+  const fingerprint = createHash("sha256")
+    .update(JSON.stringify(snapshot))
+    .digest("hex");
+  const expectedTables =
+    snapshot.schemaVersion === 7
+      ? backupTables.filter((t) => t !== "roles" && t !== "user_roles")
+      : backupTables;
   demand(
     snapshot.tables &&
-      backupTables.every((t) => Array.isArray(snapshot.tables[t])) &&
-      Object.keys(snapshot.tables).length === backupTables.length,
+      expectedTables.every((t) => Array.isArray(snapshot.tables[t])) &&
+      Object.keys(snapshot.tables).length === expectedTables.length,
     "Неполная резервная копия",
   );
   demand(
@@ -109,9 +120,37 @@ export function importData(db, snapshot, adminTelegramId) {
     ),
     "Ваш Telegram ID должен принадлежать активному администратору исходной базы",
   );
-  const fingerprint = createHash("sha256")
-    .update(JSON.stringify(snapshot))
-    .digest("hex");
+  if (snapshot.schemaVersion === 7)
+    snapshot = {
+      ...snapshot,
+      schemaVersion: 8,
+      tables: {
+        ...snapshot.tables,
+        roles: defaultRoles.map((r) => ({
+          ...r,
+          permissions: JSON.stringify(r.permissions),
+        })),
+        user_roles: [],
+      },
+    };
+  demand(
+    defaultRoles.every((r) => snapshot.tables.roles.some((x) => x.id === r.id)),
+    "В копии отсутствуют исходные роли",
+  );
+  for (const role of snapshot.tables.roles) {
+    let permissions;
+    try {
+      permissions = JSON.parse(role.permissions);
+    } catch {}
+    demand(
+      typeof role.name === "string" &&
+        role.name.trim().length > 0 &&
+        role.name.length <= 80 &&
+        Array.isArray(permissions) &&
+        permissions.every((p) => permissionCatalog.some((x) => x.id === p)),
+      "Некорректная роль в резервной копии",
+    );
+  }
   const marker = db
     .prepare("SELECT value FROM meta WHERE key='cloudflare_imported'")
     .get();

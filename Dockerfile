@@ -7,7 +7,7 @@ COPY . .
 RUN npm run build \
     && npm prune --omit=dev --cache /tmp/npm-cache \
     && mkdir -p /runtime/scripts /runtime/data /runtime/backups \
-    && cp -r node_modules dist server package.json /runtime/ \
+    && cp -r node_modules dist server shared package.json /runtime/ \
     && cp scripts/backup.mjs /runtime/scripts/
 
 FROM node:24.11.1-bookworm-slim

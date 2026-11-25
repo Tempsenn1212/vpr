@@ -42,6 +42,15 @@ import {
   readinessTerms,
   isTuesdayPlan,
 } from "./types";
+import {
+  can,
+  roleName,
+  settingsAccess,
+  canAssignRole,
+  permissionCatalog,
+  type Permission,
+} from "../shared/permissions.ts";
+import { RolesPanel } from "./RolesPanel";
 import { api, ApiError, setSessionToken } from "./api";
 import { Dashboard, type DashboardFilter } from "./Dashboard";
 import { RecurringPanel, Subdocuments } from "./Recurring";
@@ -93,6 +102,40 @@ function App() {
     authenticating = useRef(false),
     refreshInterval = useRef(2000);
   const [loginBusy, setLoginBusy] = useState(false);
+  useEffect(() => {
+    if (!data) return;
+    if (
+      (view === "history" && !can(data.me, "history.view")) ||
+      (view === "reviews" && !can(data.me, "reviews.view")) ||
+      (view === "settings" && !settingsAccess(data.me))
+    )
+      setView("home");
+    if (
+      modal?.type === "form" &&
+      !can(
+        data.me,
+        modal.doc && !modal.copy ? "documents.edit" : "documents.create",
+      )
+    )
+      setModal(null);
+    const actionRights: Record<string, Permission[]> = {
+      ready: ["documents.ready"],
+      place: ["documents.place"],
+      "place-confirm": ["documents.place", "documents.confirm"],
+      confirm: ["documents.confirm"],
+      reject: ["documents.confirm"],
+      revoke: ["documents.confirm"],
+      return: ["documents.return"],
+      delete: ["documents.delete"],
+    };
+    if (
+      (modal?.type === "action" &&
+        !(actionRights[modal.action] || []).every((p) => can(data.me, p))) ||
+      (modal?.type === "batch" && !can(data.me, "documents.confirm")) ||
+      (modal?.type === "review" && !can(data.me, "reviews.create"))
+    )
+      setModal(null);
+  }, [data, view, modal]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
@@ -321,7 +364,7 @@ function App() {
                   <span>
                     <b>{u.name}</b>
                     <small>
-                      {u.role === "CHIEF" ? "Начальник" : "Работник"}
+                      {roleName(u)}
                       {u.admin ? " · Администратор" : ""}
                     </small>
                   </span>
@@ -338,7 +381,6 @@ function App() {
     );
   const s = data,
     me = s.me,
-    chief = me.role === "CHIEF",
     selectedMonth =
       monthSelection === "current" ? s.today.slice(0, 7) : monthSelection,
     docs = s.documents.filter((d) => !d.deleted && inMonth(d, selectedMonth)),
@@ -360,7 +402,7 @@ function App() {
           ["overdue", "today"].includes(d.readyDeadline?.kind || "")),
     ),
     next = s.periods.find((p) => p.end >= s.today) || s.periods.at(-1),
-    settingsAllowed = chief || me.admin;
+    settingsAllowed = settingsAccess(me);
   const selectedDoc =
     modal?.type === "doc"
       ? s.documents.find((d) => d.id === modal.doc.id)
@@ -381,8 +423,12 @@ function App() {
           {[
             ["home", "Обзор", LayoutGrid],
             ["dashboard", "Таблица", FileText],
-            ["reviews", "Проверки", ClipboardCheck],
-            ["history", "История", History],
+            ...(can(me, "reviews.view")
+              ? [["reviews", "Проверки", ClipboardCheck]]
+              : []),
+            ...(can(me, "history.view")
+              ? [["history", "История", History]]
+              : []),
             ...(settingsAllowed ? [["settings", "Управление", Settings]] : []),
           ].map(([id, label, Icon]: any) => (
             <button
@@ -405,7 +451,7 @@ function App() {
             <div>
               <b>{me.name}</b>
               <small>
-                {chief ? "Начальник" : "Работник"}
+                {roleName(me)}
                 {me.admin ? " · Админ" : ""}
               </small>
             </div>
@@ -530,20 +576,22 @@ function App() {
                   <div className="eyebrow">ДОКУМЕНТЫ ПОД КОНТРОЛЕМ</div>
                   <h1>Обзор документации</h1>
                   <p>
-                    {me.name} · {chief ? "Начальник" : "Работник"}
+                    {me.name} · {roleName(me)}
                     {me.admin ? " · Администратор" : ""}
                     <br />
                     Сроки и сдача документов — в одном месте. Проверка
                     необязательна.
                   </p>
                 </div>
-                <button
-                  className="button"
-                  onClick={() => form(undefined, false, visibleCats[0]?.id)}
-                >
-                  <Plus size={19} />
-                  Создать документ
-                </button>
+                {can(me, "documents.create") && (
+                  <button
+                    className="button"
+                    onClick={() => form(undefined, false, visibleCats[0]?.id)}
+                  >
+                    <Plus size={19} />
+                    Создать документ
+                  </button>
+                )}
               </div>
               <section className="stats">
                 <Stat
@@ -601,7 +649,7 @@ function App() {
                   kind="amber"
                 />
               </section>
-              {next && (
+              {next && can(me, "reviews.view") && (
                 <section className="review-banner">
                   <div className="calendar-icon">
                     <CalendarDays size={25} />
@@ -1066,10 +1114,12 @@ function CategoryView({ s, id, month, onOpen, onCreate, back }: any) {
           <h1>{c?.name}</h1>
           <p>Общая работа · {docs.length} документов в списке</p>
         </div>
-        <button className="button" onClick={onCreate}>
-          <Plus size={18} />
-          Создать документ
-        </button>
+        {can(s.me, "documents.create") && (
+          <button className="button" onClick={onCreate}>
+            <Plus size={18} />
+            Создать документ
+          </button>
+        )}
       </div>
       <div className="filters">
         <label className="search">
@@ -1355,7 +1405,7 @@ function DocumentDetail({
   action,
   run,
 }: any) {
-  const chief = s.me.role === "CHIEF";
+  const chief = can(s.me, "documents.confirm");
   const submission = isSubmission(d);
   const mark = (label: string, m: any) => (
     <div className="mark">
@@ -1405,7 +1455,7 @@ function DocumentDetail({
         <section className="document-topic-detail" aria-label="Тема лектория">
           <div className="topic-heading">
             <b>Тема лектория</b>
-            {!d.deleted && (
+            {!d.deleted && can(s.me, "documents.edit") && (
               <button
                 type="button"
                 className="text-link"
@@ -1469,41 +1519,30 @@ function DocumentDetail({
           Последнее изменение: {stamp(d.updatedAt, s.timeZone)}
         </small>
       </div>
-      <Subdocuments doc={d} busy={busy} run={run} />
+      <Subdocuments doc={d} busy={busy} run={run} user={s.me} />
       {!d.deleted && (
         <>
           <div className="action-grid">
-            {["IN_PROGRESS", "NEEDS_CORRECTION"].includes(d.status) && (
-              <button
-                className="button ready-action"
-                disabled={
-                  busy ||
-                  (d.items?.length > 0 &&
-                    !d.items.every((item: any) => item.ready))
-                }
-                onClick={() => action(d, "ready")}
-              >
-                <Check />
-                {readinessTerms(d).status}
-              </button>
-            )}
-            {["IN_PROGRESS", "READY", "NEEDS_CORRECTION"].includes(
-              d.status,
-            ) && (
-              <>
+            {can(s.me, "documents.ready") &&
+              ["IN_PROGRESS", "NEEDS_CORRECTION"].includes(d.status) && (
                 <button
-                  className={"button" + (!isReady(d) ? " secondary" : "")}
+                  className="button ready-action"
                   disabled={
                     busy ||
                     (d.items?.length > 0 &&
                       !d.items.every((item: any) => item.ready))
                   }
-                  onClick={() => action(d, "place")}
+                  onClick={() => action(d, "ready")}
                 >
-                  <Folder />
-                  {submission ? "Сдан" : "Вложен в журнал"}
+                  <Check />
+                  {readinessTerms(d).status}
                 </button>
-                {chief && (
+              )}
+            {can(s.me, "documents.place") &&
+              ["IN_PROGRESS", "READY", "NEEDS_CORRECTION"].includes(
+                d.status,
+              ) && (
+                <>
                   <button
                     className={"button" + (!isReady(d) ? " secondary" : "")}
                     disabled={
@@ -1511,14 +1550,29 @@ function DocumentDetail({
                       (d.items?.length > 0 &&
                         !d.items.every((item: any) => item.ready))
                     }
-                    onClick={() => action(d, "place-confirm")}
+                    onClick={() => action(d, "place")}
                   >
-                    <CheckCheck />
-                    {submission ? "Сдан и подтверждён" : "Вложен и подтверждён"}
+                    <Folder />
+                    {submission ? "Сдан" : "Вложен в журнал"}
                   </button>
-                )}
-              </>
-            )}
+                  {chief && (
+                    <button
+                      className={"button" + (!isReady(d) ? " secondary" : "")}
+                      disabled={
+                        busy ||
+                        (d.items?.length > 0 &&
+                          !d.items.every((item: any) => item.ready))
+                      }
+                      onClick={() => action(d, "place-confirm")}
+                    >
+                      <CheckCheck />
+                      {submission
+                        ? "Сдан и подтверждён"
+                        : "Вложен и подтверждён"}
+                    </button>
+                  )}
+                </>
+              )}
             {chief && d.status === "PLACED" && (
               <>
                 <button
@@ -1546,7 +1600,7 @@ function DocumentDetail({
                 Отозвать подтверждение
               </button>
             )}
-            {d.status !== "IN_PROGRESS" && (
+            {can(s.me, "documents.return") && d.status !== "IN_PROGRESS" && (
               <button
                 className="button secondary"
                 onClick={() => action(d, "return")}
@@ -1557,23 +1611,36 @@ function DocumentDetail({
             )}
           </div>
           <div className="small-actions">
-            <button onClick={() => edit(d)}>Редактировать</button>
-            <button onClick={() => copy(d)}>
-              <Copy size={16} />
-              Создать копию
-            </button>
-            <button className="danger-text" onClick={() => action(d, "delete")}>
-              <Trash2 size={16} />
-              Удалить
-            </button>
+            {can(s.me, "documents.edit") && (
+              <button onClick={() => edit(d)}>Редактировать</button>
+            )}
+            {can(s.me, "documents.create") && (
+              <button onClick={() => copy(d)}>
+                <Copy size={16} />
+                Создать копию
+              </button>
+            )}
+            {can(s.me, "documents.delete") && (
+              <button
+                className="danger-text"
+                onClick={() => action(d, "delete")}
+              >
+                <Trash2 size={16} />
+                Удалить
+              </button>
+            )}
           </div>
         </>
       )}
-      <h3>История карточки</h3>
-      <AuditList
-        eventsList={s.audit.filter((e: Audit) => e.document_id === d.id)}
-        s={s}
-      />
+      {can(s.me, "history.view") && (
+        <>
+          <h3>История карточки</h3>
+          <AuditList
+            eventsList={s.audit.filter((e: Audit) => e.document_id === d.id)}
+            s={s}
+          />
+        </>
+      )}
     </>
   );
 }
@@ -1685,7 +1752,7 @@ function Reviews({ s, busy, open, run, showModal }: any) {
   const p: Period | undefined =
     s.periods.find((p: Period) => p.id === periodId) ||
     s.periods.find((p: Period) => p.end >= s.today);
-  const chief = s.me.role === "CHIEF";
+  const chief = can(s.me, "documents.confirm");
   const list: Doc[] = p
     ? s.documents.filter(
         (d: Doc) =>
@@ -1724,7 +1791,7 @@ function Reviews({ s, busy, open, run, showModal }: any) {
             фиксация итогов периода — по желанию.
           </p>
         </div>
-        {chief && p && (
+        {can(s.me, "reviews.create") && p && (
           <button
             className="button secondary"
             disabled={busy}
@@ -1950,6 +2017,31 @@ function AuditList({
               {e.type === "COMMENT" && e.data.comment && (
                 <p className="audit-comment">{e.data.comment.text}</p>
               )}
+              {e.type === "ROLE" && after && (
+                <div className="diff">
+                  <p>
+                    Роль:{" "}
+                    {before?.name ? (
+                      <>
+                        <del>{before.name}</del> →{" "}
+                      </>
+                    ) : null}
+                    {after.name}
+                  </p>
+                  <p>
+                    Права:{" "}
+                    {after.permissions?.length
+                      ? after.permissions
+                          .map(
+                            (id: string) =>
+                              permissionCatalog.find((p) => p.id === id)
+                                ?.label || id,
+                          )
+                          .join("; ")
+                      : "Только просмотр журнала"}
+                  </p>
+                </div>
+              )}
               {e.batch_id && <small>Общая операция: {e.batch_id}</small>}
               {before && after && (
                 <div className="diff">
@@ -2099,6 +2191,9 @@ function HistoryView({ s, open }: any) {
 }
 function SettingsView({ s, run, busy, setError }: any) {
   const admin = s.me.admin;
+  const usersAllowed = can(s.me, "users.manage"),
+    categoriesAllowed = can(s.me, "categories.manage"),
+    scheduleAllowed = can(s.me, "schedule.manage");
   const current = s.scheduleVersions.at(-1);
   const [anchor, setAnchor] = useState(current.anchor),
     [interval, setIntervalValue] = useState(current.interval),
@@ -2145,91 +2240,96 @@ function SettingsView({ s, run, busy, setError }: any) {
         <div>
           <div className="eyebrow">УПРАВЛЕНИЕ ПРИЛОЖЕНИЕМ</div>
           <h1>Настройки</h1>
-          <p>Периоды учёта{admin ? ", участники и категории" : ""}.</p>
+          <p>Роли, участники и доступные настройки приложения.</p>
         </div>
       </div>
-      <RecurringPanel s={s} busy={busy} run={run} />
-      <section className="panel">
-        <div className="section-title">
-          <h2>Периоды учёта и дополнительных проверок</h2>
-          <CalendarDays size={21} />
-        </div>
-        <p className="muted">
-          Новые настройки вступают в силу после текущего периода. До первого
-          периода можно заменить начальные настройки целиком.
-        </p>
-        <div className="form-row">
-          <label className="field">
-            Дата начала отсчёта
-            <input
-              type="date"
-              value={anchor}
-              min="1900-01-01"
-              max="2200-12-31"
-              onChange={(e) => {
-                setAnchor(e.target.value);
-                setPreview(null);
-              }}
-            />
-          </label>
-          <label className="field">
-            Интервал, календарных дней
-            <input
-              type="number"
-              min={1}
-              max={3660}
-              step={1}
-              value={interval}
-              onChange={(e) => {
-                setIntervalValue(Number(e.target.value));
-                setPreview(null);
-              }}
-            />
-          </label>
-        </div>
-        <button className="button secondary" onClick={previewSchedule}>
-          Рассчитать ближайшие даты
-        </button>
-        {preview && (
-          <div className="schedule-preview">
-            <h3>Предварительный расчёт</h3>
-            {preview.periods.map((p: Period) => (
-              <p key={p.id}>
-                {fmt(p.start)} — {fmt(p.end)}
-                {p.transition && <b> · Переходный период</b>}
-              </p>
-            ))}
-            <button
-              className="button"
-              disabled={busy}
-              onClick={async () => {
-                const r = await run(
-                  "/schedule",
-                  { anchor, interval, expectedVersion: current.id },
-                  "POST",
-                  "Расписание сохранено",
-                  false,
-                );
-                if (r) setPreview(null);
-              }}
-            >
-              Сохранить расписание
-            </button>
-          </div>
-        )}
-        <details>
-          <summary>Версии расписания</summary>
-          {s.scheduleVersions.map((v: any) => (
-            <p key={v.id}>
-              С {fmt(v.effectiveStart)} · отсчёт {fmt(v.anchor)} · {v.interval}{" "}
-              дней · {stamp(v.at, s.timeZone)}
-            </p>
-          ))}
-        </details>
-      </section>
-      {admin && (
+      {can(s.me, "roles.manage") && <RolesPanel s={s} busy={busy} run={run} />}
+      {scheduleAllowed && (
         <>
-          {s.portableBackup && (
+          <RecurringPanel s={s} busy={busy} run={run} />
+          <section className="panel">
+            <div className="section-title">
+              <h2>Периоды учёта и дополнительных проверок</h2>
+              <CalendarDays size={21} />
+            </div>
+            <p className="muted">
+              Новые настройки вступают в силу после текущего периода. До первого
+              периода можно заменить начальные настройки целиком.
+            </p>
+            <div className="form-row">
+              <label className="field">
+                Дата начала отсчёта
+                <input
+                  type="date"
+                  value={anchor}
+                  min="1900-01-01"
+                  max="2200-12-31"
+                  onChange={(e) => {
+                    setAnchor(e.target.value);
+                    setPreview(null);
+                  }}
+                />
+              </label>
+              <label className="field">
+                Интервал, календарных дней
+                <input
+                  type="number"
+                  min={1}
+                  max={3660}
+                  step={1}
+                  value={interval}
+                  onChange={(e) => {
+                    setIntervalValue(Number(e.target.value));
+                    setPreview(null);
+                  }}
+                />
+              </label>
+            </div>
+            <button className="button secondary" onClick={previewSchedule}>
+              Рассчитать ближайшие даты
+            </button>
+            {preview && (
+              <div className="schedule-preview">
+                <h3>Предварительный расчёт</h3>
+                {preview.periods.map((p: Period) => (
+                  <p key={p.id}>
+                    {fmt(p.start)} — {fmt(p.end)}
+                    {p.transition && <b> · Переходный период</b>}
+                  </p>
+                ))}
+                <button
+                  className="button"
+                  disabled={busy}
+                  onClick={async () => {
+                    const r = await run(
+                      "/schedule",
+                      { anchor, interval, expectedVersion: current.id },
+                      "POST",
+                      "Расписание сохранено",
+                      false,
+                    );
+                    if (r) setPreview(null);
+                  }}
+                >
+                  Сохранить расписание
+                </button>
+              </div>
+            )}
+            <details>
+              <summary>Версии расписания</summary>
+              {s.scheduleVersions.map((v: any) => (
+                <p key={v.id}>
+                  С {fmt(v.effectiveStart)} · отсчёт {fmt(v.anchor)} ·{" "}
+                  {v.interval} дней · {stamp(v.at, s.timeZone)}
+                </p>
+              ))}
+            </details>
+          </section>
+        </>
+      )}
+      {settingsAccess(s.me) && (
+        <>
+          {s.portableBackup && can(s.me, "backup.export") && (
             <section className="panel">
               <h2>Резервная копия</h2>
               <p className="muted">
@@ -2245,256 +2345,274 @@ function SettingsView({ s, run, busy, setError }: any) {
               </button>
             </section>
           )}
-          <section className="panel">
-            <div className="section-title">
-              <h2>Участники и роли</h2>
-              <button
-                className="button secondary"
-                onClick={() =>
-                  setUser({
-                    name: "",
-                    telegramId: "",
-                    role: "WORKER",
-                    active: true,
-                  })
-                }
-              >
-                <Plus size={17} />
-                Добавить
-              </button>
-            </div>
-            {s.users.map((u: User) => (
-              <div className="management-row" key={u.id}>
-                <div>
-                  <b>{u.name}</b>
-                  <small>
-                    Telegram ID: {u.telegram_id} ·{" "}
-                    {u.role === "CHIEF" ? "Начальник" : "Работник"}
-                    {u.admin ? " · Администратор" : ""}
-                    {!u.active ? " · Отключён" : ""}
-                  </small>
-                </div>
+          {usersAllowed && (
+            <section className="panel">
+              <div className="section-title">
+                <h2>Участники и роли</h2>
                 <button
-                  className="text-link"
-                  onClick={() => setUser({ ...u, telegramId: u.telegram_id })}
+                  className="button secondary"
+                  onClick={() =>
+                    setUser({
+                      name: "",
+                      telegramId: "",
+                      role:
+                        s.roles.find((r: any) => canAssignRole(s.me, r))?.id ||
+                        "",
+                      active: true,
+                    })
+                  }
                 >
-                  Изменить
+                  <Plus size={17} />
+                  Добавить
                 </button>
               </div>
-            ))}
-            {userDraft && (
-              <form
-                className="inline-form"
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  const r = await run(
-                    "/users" + (userDraft.id ? "/" + userDraft.id : ""),
-                    userDraft,
-                    userDraft.id ? "PATCH" : "POST",
-                    "Участник сохранён",
-                    false,
-                  );
-                  if (r) setUser(null);
-                }}
-              >
-                <label className="field">
-                  Имя
-                  <input
-                    required
-                    maxLength={100}
-                    value={userDraft.name}
-                    onChange={(e) =>
-                      setUser({ ...userDraft, name: e.target.value })
+              {s.users.map((u: User) => (
+                <div className="management-row" key={u.id}>
+                  <div>
+                    <b>{u.name}</b>
+                    <small>
+                      Telegram ID: {u.telegram_id} · {roleName(u)}
+                      {u.admin ? " · Администратор" : ""}
+                      {!u.active ? " · Отключён" : ""}
+                    </small>
+                  </div>
+                  <button
+                    className="text-link"
+                    disabled={
+                      (!admin && u.admin) || !canAssignRole(s.me, u as any)
                     }
-                  />
-                </label>
-                <label className="field">
-                  Telegram ID
-                  <input
-                    required
-                    inputMode="numeric"
-                    pattern="[0-9]{1,16}"
-                    value={userDraft.telegramId}
-                    onChange={(e) =>
-                      setUser({ ...userDraft, telegramId: e.target.value })
-                    }
-                  />
-                </label>
-                <label className="field">
-                  Рабочая роль
-                  <AppSelect
-                    label="Рабочая роль"
-                    value={userDraft.role}
-                    onChange={(value) => setUser({ ...userDraft, role: value })}
-                    options={[
-                      { id: "WORKER", name: "Работник" },
-                      { id: "CHIEF", name: "Начальник" },
-                    ]}
-                  />
-                </label>
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={userDraft.active}
-                    onChange={(e) =>
-                      setUser({ ...userDraft, active: e.target.checked })
-                    }
-                  />
-                  Доступ включён
-                </label>
-                <div className="small-actions">
-                  <button className="button" disabled={busy}>
-                    Сохранить участника
-                  </button>
-                  <button type="button" onClick={() => setUser(null)}>
-                    Отмена
+                    onClick={() => setUser({ ...u, telegramId: u.telegram_id })}
+                  >
+                    Изменить
                   </button>
                 </div>
-              </form>
-            )}
-          </section>
-          <section className="panel">
-            <div className="section-title">
-              <h2>Категории</h2>
+              ))}
+              {userDraft && (
+                <form
+                  className="inline-form"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const r = await run(
+                      "/users" + (userDraft.id ? "/" + userDraft.id : ""),
+                      userDraft,
+                      userDraft.id ? "PATCH" : "POST",
+                      "Участник сохранён",
+                      false,
+                    );
+                    if (r) setUser(null);
+                  }}
+                >
+                  <label className="field">
+                    Имя
+                    <input
+                      required
+                      maxLength={100}
+                      value={userDraft.name}
+                      onChange={(e) =>
+                        setUser({ ...userDraft, name: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    Telegram ID
+                    <input
+                      required
+                      inputMode="numeric"
+                      pattern="[0-9]{1,16}"
+                      value={userDraft.telegramId}
+                      onChange={(e) =>
+                        setUser({ ...userDraft, telegramId: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    Рабочая роль
+                    <AppSelect
+                      label="Рабочая роль"
+                      value={userDraft.role}
+                      onChange={(value) =>
+                        setUser({ ...userDraft, role: value })
+                      }
+                      options={s.roles
+                        .filter((r: any) => canAssignRole(s.me, r))
+                        .map((r: any) => ({ id: r.id, name: r.name }))}
+                    />
+                  </label>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={userDraft.active}
+                      onChange={(e) =>
+                        setUser({ ...userDraft, active: e.target.checked })
+                      }
+                    />
+                    Доступ включён
+                  </label>
+                  <div className="small-actions">
+                    <button className="button" disabled={busy}>
+                      Сохранить участника
+                    </button>
+                    <button type="button" onClick={() => setUser(null)}>
+                      Отмена
+                    </button>
+                  </div>
+                </form>
+              )}
+            </section>
+          )}
+          {categoriesAllowed && (
+            <section className="panel">
+              <div className="section-title">
+                <h2>Категории</h2>
+                <button
+                  className="button secondary"
+                  onClick={() =>
+                    setCat({
+                      name: "",
+                      position: s.categories.length + 1,
+                      hidden: false,
+                    })
+                  }
+                >
+                  <Plus size={17} />
+                  Добавить
+                </button>
+              </div>
+              {s.categories.map((c: Category) => (
+                <div className="management-row" key={c.id}>
+                  <div>
+                    <b>{c.name}</b>
+                    <small>
+                      Порядок: {c.position}
+                      {c.hidden ? " · Скрыта" : ""}
+                    </small>
+                  </div>
+                  <button
+                    className="text-link"
+                    onClick={() => setCat({ ...c })}
+                  >
+                    Изменить
+                  </button>
+                </div>
+              ))}
+              {catDraft && (
+                <form
+                  className="inline-form"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const r = await run(
+                      "/categories" + (catDraft.id ? "/" + catDraft.id : ""),
+                      catDraft,
+                      catDraft.id ? "PATCH" : "POST",
+                      "Категория сохранена",
+                      false,
+                    );
+                    if (r) setCat(null);
+                  }}
+                >
+                  <label className="field">
+                    Название категории
+                    <input
+                      required
+                      maxLength={300}
+                      value={catDraft.name}
+                      onChange={(e) =>
+                        setCat({ ...catDraft, name: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    Порядок
+                    <input
+                      required
+                      type="number"
+                      min={0}
+                      max={10000}
+                      value={catDraft.position}
+                      onChange={(e) =>
+                        setCat({
+                          ...catDraft,
+                          position: Number(e.target.value),
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={catDraft.hidden}
+                      onChange={(e) =>
+                        setCat({ ...catDraft, hidden: e.target.checked })
+                      }
+                    />
+                    Скрыть после обработки документов
+                  </label>
+                  <p className="muted">
+                    Незавершённые карточки сначала перенесите через
+                    редактирование. Скрытые категории сохраняют данные и
+                    историю.
+                  </p>
+                  <div className="small-actions">
+                    <button className="button" disabled={busy}>
+                      Сохранить категорию
+                    </button>
+                    <button type="button" onClick={() => setCat(null)}>
+                      Отмена
+                    </button>
+                  </div>
+                </form>
+              )}
+            </section>
+          )}
+          {admin && (
+            <section className="panel">
+              <h2>Передача администрирования</h2>
+              <p className="muted">
+                Выбранный участник получит право управления. Ваша рабочая роль
+                сохранится, право администратора будет передано.
+              </p>
+              <label className="field">
+                Новый администратор
+                <AppSelect
+                  label="Новый администратор"
+                  value={target}
+                  onChange={(value) => {
+                    setTarget(value);
+                    setTransferAck(false);
+                  }}
+                  options={[
+                    { id: "", name: "Выберите участника" },
+                    ...s.users
+                      .filter((u: User) => u.active && u.id !== s.me.id)
+                      .map((u: User) => ({ id: u.id, name: u.name })),
+                  ]}
+                />
+              </label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={transferAck}
+                  onChange={(e) => setTransferAck(e.target.checked)}
+                />
+                Подтверждаю передачу права управления
+              </label>
               <button
-                className="button secondary"
+                className="button"
+                disabled={busy || !target || !transferAck}
                 onClick={() =>
-                  setCat({
-                    name: "",
-                    position: s.categories.length + 1,
-                    hidden: false,
-                  })
+                  run(
+                    "/admin/transfer",
+                    { userId: target },
+                    "POST",
+                    "Администрирование передано",
+                    false,
+                  )
                 }
               >
-                <Plus size={17} />
-                Добавить
+                Передать администрирование
               </button>
-            </div>
-            {s.categories.map((c: Category) => (
-              <div className="management-row" key={c.id}>
-                <div>
-                  <b>{c.name}</b>
-                  <small>
-                    Порядок: {c.position}
-                    {c.hidden ? " · Скрыта" : ""}
-                  </small>
-                </div>
-                <button className="text-link" onClick={() => setCat({ ...c })}>
-                  Изменить
-                </button>
-              </div>
-            ))}
-            {catDraft && (
-              <form
-                className="inline-form"
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  const r = await run(
-                    "/categories" + (catDraft.id ? "/" + catDraft.id : ""),
-                    catDraft,
-                    catDraft.id ? "PATCH" : "POST",
-                    "Категория сохранена",
-                    false,
-                  );
-                  if (r) setCat(null);
-                }}
-              >
-                <label className="field">
-                  Название категории
-                  <input
-                    required
-                    maxLength={300}
-                    value={catDraft.name}
-                    onChange={(e) =>
-                      setCat({ ...catDraft, name: e.target.value })
-                    }
-                  />
-                </label>
-                <label className="field">
-                  Порядок
-                  <input
-                    required
-                    type="number"
-                    min={0}
-                    max={10000}
-                    value={catDraft.position}
-                    onChange={(e) =>
-                      setCat({ ...catDraft, position: Number(e.target.value) })
-                    }
-                  />
-                </label>
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={catDraft.hidden}
-                    onChange={(e) =>
-                      setCat({ ...catDraft, hidden: e.target.checked })
-                    }
-                  />
-                  Скрыть после обработки документов
-                </label>
-                <p className="muted">
-                  Незавершённые карточки сначала перенесите через
-                  редактирование. Скрытые категории сохраняют данные и историю.
-                </p>
-                <div className="small-actions">
-                  <button className="button" disabled={busy}>
-                    Сохранить категорию
-                  </button>
-                  <button type="button" onClick={() => setCat(null)}>
-                    Отмена
-                  </button>
-                </div>
-              </form>
-            )}
-          </section>
-          <section className="panel">
-            <h2>Передача администрирования</h2>
-            <p className="muted">
-              Выбранный участник получит право управления. Ваша рабочая роль
-              сохранится, право администратора будет передано.
-            </p>
-            <label className="field">
-              Новый администратор
-              <AppSelect
-                label="Новый администратор"
-                value={target}
-                onChange={(value) => {
-                  setTarget(value);
-                  setTransferAck(false);
-                }}
-                options={[
-                  { id: "", name: "Выберите участника" },
-                  ...s.users
-                    .filter((u: User) => u.active && u.id !== s.me.id)
-                    .map((u: User) => ({ id: u.id, name: u.name })),
-                ]}
-              />
-            </label>
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={transferAck}
-                onChange={(e) => setTransferAck(e.target.checked)}
-              />
-              Подтверждаю передачу права управления
-            </label>
-            <button
-              className="button"
-              disabled={busy || !target || !transferAck}
-              onClick={() =>
-                run(
-                  "/admin/transfer",
-                  { userId: target },
-                  "POST",
-                  "Администрирование передано",
-                  false,
-                )
-              }
-            >
-              Передать администрирование
-            </button>
-          </section>
+            </section>
+          )}
         </>
       )}
     </>

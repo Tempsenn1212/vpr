@@ -1,3 +1,4 @@
+import { can } from "../shared/permissions.ts";
 import React, { useState } from "react";
 import { Search } from "lucide-react";
 import {
@@ -86,9 +87,11 @@ export function Dashboard({
             сдача рапортов.
           </p>
         </div>
-        <button className="button" onClick={create}>
-          Создать документ
-        </button>
+        {can(s.me, "documents.create") && (
+          <button className="button" onClick={create}>
+            Создать документ
+          </button>
+        )}
       </div>
       <div className="dashboard-tabs" role="group" aria-label="Фильтр таблицы">
         {tabs.map(([id, label]) => (

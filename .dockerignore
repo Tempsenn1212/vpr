@@ -6,3 +6,8 @@ backups
 .git
 playwright-report
 test-results
+
+.wrangler
+.dev.vars
+.cloudflare-setup.json
+cloudflare-dist

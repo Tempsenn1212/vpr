@@ -95,7 +95,7 @@ test("v6 upgrade unlocks lecture topics without overwriting content, user marks 
         .all(),
       keys,
     );
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 7);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 8);
     assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
   } finally {
     db.close();
@@ -149,7 +149,7 @@ test("application without comment entry remains compatible with a v6 database an
       previous,
     );
     assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 7);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 8);
   } finally {
     db.close();
   }
@@ -422,7 +422,7 @@ test("v4 plan headings migrate once with audit and preserve facts, custom names,
       db.prepare("SELECT * FROM audit_events ORDER BY seq").all(),
       audit,
     );
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 7);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 8);
   } finally {
     db.close();
   }
@@ -469,7 +469,7 @@ test("new demo and production databases contain the twelve ordered document cate
       assert.equal(categories[10].name, "Боевые листки");
       assert.equal(categories[11].name, "Рапорт ГДП");
       assert(categories.every((c) => !c.hidden));
-      assert.equal(db.prepare("PRAGMA user_version").get().user_version, 7);
+      assert.equal(db.prepare("PRAGMA user_version").get().user_version, 8);
     } finally {
       db.close();
     }

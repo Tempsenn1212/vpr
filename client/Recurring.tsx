@@ -1,3 +1,5 @@
+import { can } from "../shared/permissions.ts";
+import type { User } from "./types";
 import React, { useState } from "react";
 import {
   readinessTerms,
@@ -140,7 +142,7 @@ export function RecurringPanel({
     </section>
   );
 }
-function ItemRow({ item, doc, busy, run }: any) {
+function ItemRow({ item, doc, busy, run, user }: any) {
   const [pending, setPending] = useState<boolean | null>(null);
   const [editing, setEditing] = useState(false),
     [label, setLabel] = useState(item.label);
@@ -151,7 +153,13 @@ function ItemRow({ item, doc, busy, run }: any) {
         <input
           type="checkbox"
           checked={pending ?? !!item.ready}
-          disabled={busy || locked || editing || pending !== null}
+          disabled={
+            busy ||
+            locked ||
+            editing ||
+            pending !== null ||
+            !can(user, "documents.ready")
+          }
           onChange={async (e) => {
             const done = e.target.checked;
             setPending(done);
@@ -173,7 +181,7 @@ function ItemRow({ item, doc, busy, run }: any) {
           {item.ready && <small>Оформлен · {item.ready.name}</small>}
         </span>
       </label>
-      {!locked && !editing && (
+      {!locked && !editing && can(user, "documents.edit") && (
         <button
           className="text-link"
           onClick={() => {
@@ -226,8 +234,10 @@ export function Subdocuments({
   doc,
   busy,
   run,
+  user,
 }: {
   doc: Doc;
+  user: User;
   busy: boolean;
   run: any;
 }) {
@@ -245,7 +255,7 @@ export function Subdocuments({
         max={doc.items.length}
         aria-label="Оформление листов беседы"
       />
-      {!doc.completed && !doc.deleted && (
+      {!doc.completed && !doc.deleted && can(user, "documents.ready") && (
         <button
           type="button"
           className="button subdocuments-mark-all"
@@ -267,7 +277,14 @@ export function Subdocuments({
         </button>
       )}
       {doc.items.map((item) => (
-        <ItemRow key={item.id} item={item} doc={doc} busy={busy} run={run} />
+        <ItemRow
+          key={item.id}
+          item={item}
+          doc={doc}
+          busy={busy}
+          run={run}
+          user={user}
+        />
       ))}
     </section>
   );

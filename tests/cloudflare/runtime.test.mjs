@@ -319,6 +319,9 @@ test("initial import is authenticated, atomic, retained, one-time and holds cron
   });
   store.action(actor, d.id, "ready", { version: d.version });
   const snapshot = exportData(db);
+  snapshot.schemaVersion = 7;
+  delete snapshot.tables.roles;
+  delete snapshot.tables.user_roles;
   db.close();
   const send = (data = snapshot, secret = "synthetic-import-secret") =>
     call("/api/admin/import", {
@@ -346,6 +349,88 @@ test("initial import is authenticated, atomic, retained, one-time and holds cron
   const exported = await call("/api/admin/export", { origin: importUrl, auth });
   assert.equal(exported.status, 200);
   assert(!Object.hasOwn(exported.body.tables, "sessions"));
+});
+
+test("Cloudflare custom roles enforce rights and revocation across live sessions and a durable restart", async () => {
+  const role = await call("/api/roles", {
+    method: "POST",
+    data: { name: "Облачный оператор", permissions: ["documents.ready"] },
+  });
+  assert.equal(role.status, 200);
+  const user = await call("/api/users", {
+    method: "POST",
+    data: {
+      name: "Облачный участник",
+      telegramId: "900005555",
+      role: role.body.id,
+      active: true,
+    },
+  });
+  assert.equal(user.status, 200);
+  let auth = await login("900005555");
+  assert.equal(
+    (
+      await call("/api/roles", {
+        method: "POST",
+        auth,
+        data: { name: "Нельзя", permissions: [] },
+      })
+    ).status,
+    403,
+  );
+  const created = await call("/api/documents", {
+    method: "POST",
+    data: {
+      title: "Для облачного оператора",
+      categoryId: "category-2",
+      dueDate: "2099-11-30",
+    },
+  });
+  assert.equal(created.status, 200);
+  assert.equal(
+    (
+      await call("/api/documents/" + created.body.id + "/actions/ready", {
+        method: "POST",
+        auth,
+        data: { version: 1 },
+      })
+    ).status,
+    200,
+  );
+  const revised = await call("/api/roles/" + role.body.id, {
+    method: "PATCH",
+    data: { version: 1, name: "Облачный наблюдатель", permissions: [] },
+  });
+  assert.equal(revised.status, 200);
+  assert.equal(
+    (
+      await call("/api/documents", {
+        method: "POST",
+        auth,
+        data: {
+          title: "Запрет",
+          categoryId: "category-2",
+          dueDate: "2099-11-30",
+        },
+      })
+    ).status,
+    403,
+  );
+  assert.equal((await call("/api/admin/export", { auth })).status, 403);
+  const current = (await call("/api/state", { auth })).body;
+  assert.equal(current.me.roleName, "Облачный наблюдатель");
+  assert.deepEqual(current.me.permissions, []);
+  assert.deepEqual(current.audit, []);
+  child.kill("SIGTERM");
+  await new Promise((r) => child.once("exit", r));
+  const app = await start("main");
+  child = app.p;
+  url = app.url;
+  session = await login();
+  auth = await login("900005555");
+  const restored = (await call("/api/state", { auth })).body;
+  assert.equal(restored.me.role, role.body.id);
+  assert.deepEqual(restored.me.permissions, []);
 });
 
 test("Mini App works in Cloudflare with Telegram Web cookies blocked, responsive themes and backup download", async () => {
